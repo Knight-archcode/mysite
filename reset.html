@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Reset Hotel Data</title>
+</head>
+<body>
+    <h1>Reset Hotel Data</h1>
+    <button onclick="clearData()">Clear All Hotel Data</button>
+    <button onclick="viewData()">View Current Data</button>
+    <div id="dataView"></div>
+    
+    <script>
+        function clearData() {
+            localStorage.removeItem('hotelData');
+            alert('All hotel data cleared!');
+        }
+        
+        function viewData() {
+            const data = JSON.parse(localStorage.getItem('hotelData') || '{}');
+            document.getElementById('dataView').innerHTML = 
+                `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+        }
+        
+        viewData();
+    </script>
+</body>
+</html>
