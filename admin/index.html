@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hotel Navigator Admin</title>
+    <link rel="stylesheet" href="admin.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-6">
+        <!-- Login Form -->
+        <div id="loginSection" class="max-w-md mx-auto bg-white p-8 rounded-lg shadow">
+            <h2 class="text-2xl font-bold text-center text-blue-800 mb-6">Hotel Navigator Admin Page</h2>
+            <form id="loginForm">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-gray-700 mb-1">Username</label>
+                        <input type="text" id="username" class="w-full p-2 border border-gray-300 rounded" placeholder="admin" autocomplete="off" required />
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 mb-1">Password</label>
+                        <input type="password" id="password" class="w-full p-2 border border-gray-300 rounded" placeholder="••••" autocomplete="off" required />
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
+                        Login
+                    </button>
+                    <p id="loginError" class="text-red-500 text-sm mt-2 hidden">Invalid credentials. Try: admin / 1234</p>
+                    <p class="text-gray-500 text-xs text-center mt-4">
+                        Hint: username = <code>admin</code>, password = <code>1234</code>
+                    </p>
+                </div>
+            </form>
+        </div>
+
+        <!-- Admin Panel -->
+        <div id="adminPanel" class="hidden">
+            <header class="mb-6 flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl font-bold text-blue-800">🏨 Hotel Navigator Admin</h1>
+                    <p class="text-gray-600 mt-1">Manage floor plans and navigation paths</p>
+                </div>
+                <button id="logoutBtn" class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+                    Logout
+                </button>
+            </header>
+
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800">Floor Plan</h2>
+                <!-- Floor Controls -->
+                <div class="mb-4">
+                    <label class="block text-gray-700 mb-2">Select Floor</label>
+                    <div class="flex flex-wrap gap-2 items-end">
+                        <select id="floorSelect" class="p-2 border border-gray-300 rounded">
+                            <!-- Populated by JS -->
+                        </select>
+                        <button id="addFloorBtn" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">+</button>
+                        <button id="removeFloorBtn" class="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700" disabled>−</button>
+                        <button id="renameFloorBtn" class="px-3 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700">✏️ Rename</button>
+                    </div>
+                    <div id="renameFloorSection" class="mt-2 hidden">
+                        <input type="text" id="floorNameInput" placeholder="Enter floor name" class="p-2 border border-gray-300 rounded mr-2" />
+                        <button id="confirmRenameBtn" class="px-3 py-1 bg-green-600 text-white rounded">✓</button>
+                        <button id="cancelRenameBtn" class="px-3 py-1 bg-gray-600 text-white rounded ml-1">✕</button>
+                    </div>
+                    <p id="floorWarning" class="text-red-500 text-sm mt-1 hidden">At least one floor must exist.</p>
+                </div>
+
+                <!-- Upload & Clear -->
+                <div class="flex flex-col md:flex-row gap-4 items-start">
+                    <div>
+                        <label class="block text-gray-700 mb-2">Upload Image</label>
+                        <input type="file" id="floorPlanUpload" accept="image/*"
+                            class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700" />
+                    </div>
+                    <button id="clearMapBtn" class="mt-6 md:mt-8 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+                        Clear Map
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800">Map Editor</h2>
+                <div id="mapContainer" style="position: relative; height: 500px; background: #f9fafb; border: 1px dashed #d1d5db; overflow: hidden;">
+                    <img id="floorPlanImg" src="" alt="Floor Plan" style="display: none; max-width: 100%; max-height: 100%; position: absolute; top: 0; left: 0;" />
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800">Edit Mode</h2>
+                    <div class="flex flex-wrap gap-2">
+                        <button id="addModeBtn" class="px-3 py-1 text-sm bg-green-600 text-white rounded">Add Marker</button>
+                        <button id="deleteModeBtn" class="px-3 py-1 text-sm bg-red-600 text-white rounded">Delete Marker</button>
+                        <button id="connectModeBtn" class="px-3 py-1 text-sm bg-purple-600 text-white rounded">Connect</button>
+                        <button id="disconnectModeBtn" class="px-3 py-1 text-sm bg-orange-600 text-white rounded">Disconnect</button>
+                    </div>
+
+                    <div id="addMarkerForm" class="mt-4 hidden">
+                        <div class="mb-3">
+                            <label class="block text-gray-700 text-sm mb-1">Location Name</label>
+                            <input type="text" id="markerName" placeholder="e.g., Room 205" class="w-full p-2 border border-gray-300 rounded" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="block text-gray-700 text-sm mb-1">Icon</label>
+                            <div id="iconPicker" class="flex flex-wrap gap-2"></div>
+                        </div>
+                        <button id="confirmAddMarker" class="px-4 py-2 bg-blue-600 text-white rounded">Add Marker</button>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800">Locations</h2>
+                    <ul id="markersList" class="space-y-2 max-h-80 overflow-y-auto"></ul>
+                    <button id="saveDataBtn" class="mt-4 w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>
