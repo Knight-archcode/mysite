@@ -52,7 +52,7 @@ hotel-map {
     user-select: none; /* ✅ Prevent text selection */
     -webkit-user-select: none; /* ✅ Safari */
     pointer-events: auto; /* ✅ Ensure markers are clickable */
- /*   border-radius: 50%; /* ✅ Circular markers */
+    border-radius: 50%; /* ✅ Circular markers */
     background-color: rgba(255, 255, 255, 0.9); /* ✅ White background for visibility */
     border: 3px solid #3b82f6; /* ✅ Blue border */
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* ✅ Better shadow */
@@ -251,4 +251,5 @@ hotel-map {
         background-color: white !important;
     }
 }
+
 
