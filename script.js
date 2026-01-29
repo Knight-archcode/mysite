@@ -16,6 +16,30 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (!hotelData.floors) hotelData.floors = {};
 
+
+// In your script.js, add this debug code at the beginning:
+console.log('QR Code Library Loaded:', typeof qrcode);
+console.log('Current page URL:', window.location.href);
+
+// Also check if there are any other QR code generation functions    
+// ✅ OVERRIDE: Force specific URL for QR codes
+function generateQRCodeForRoute(from, to) {
+    // ALWAYS use your GitHub Pages URL
+    const baseUrl = 'https://knight-archcode.github.io/mysite/';
+    
+    // Build query parameters
+    const params = new URLSearchParams({
+        from: from,
+        to: to,
+        source: 'hotel_navigator_qr',
+        timestamp: Date.now()
+    });
+    
+    return `${baseUrl}?${params.toString()}`;
+}
+
+
+    
     // Flatten all markers with floor info
     let allMarkers = [];
     Object.keys(hotelData.floors).forEach(floorNum => {
@@ -467,118 +491,59 @@ document.addEventListener('DOMContentLoaded', () => {
         return floorData?.name || `Floor ${floorNum}`;
     }
 
-function findRoute() {
-    const from = fromSelect?.value;
-    const to = toSelect?.value;
-    if (!from || !to) {
-        routeSteps.innerHTML = '<p class="text-gray-400">Select both start and destination</p>';
-        qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm">Route QR appears here</p>';
+    function findRoute() {
+        const from = fromSelect?.value;
+        const to = toSelect?.value;
+        if (!from || !to) {
+            routeSteps.innerHTML = '<p class="text-gray-400">Select both start and destination</p>';
+            qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm">Route QR appears here</p>';
+            
+            // Clear any existing highlighting
+            currentPath = [];
+            highlightCurrentPathOnFloor();
+            return;
+        }
+
+        const path = findShortestPath(from, to);
+        if (!path || path.length === 0) {
+            routeSteps.innerHTML = '<p class="text-red-600">No path found between these locations.</p>';
+            qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm">No route available</p>';
+            
+            // Clear any existing highlighting
+            currentPath = [];
+            highlightCurrentPathOnFloor();
+            return;
+        }
+
+        // Store the current path
+        currentPath = path;
         
-        // Clear any existing highlighting
-        currentPath = [];
+        const directions = generateDirections(path);
+        let stepsHtml = '<ol class="list-decimal pl-5 space-y-1">';
+        directions.forEach(step => {
+            stepsHtml += `<li>${step}</li>`;
+        });
+        stepsHtml += '</ol>';
+        routeSteps.innerHTML = stepsHtml;
+
+        // Highlight the path on the map
         highlightCurrentPathOnFloor();
-        return;
-    }
 
-    const path = findShortestPath(from, to);
-    if (!path || path.length === 0) {
-        routeSteps.innerHTML = '<p class="text-red-600">No path found between these locations.</p>';
-        qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm">No route available</p>';
+        // QR Code generation
+    // Then in findRoute function, replace the URL generation with:
+const url = generateQRCodeForRoute(from, to);
         
-        // Clear any existing highlighting
-        currentPath = [];
-        highlightCurrentPathOnFloor();
-        return;
-    }
-
-    // Store the current path
-    currentPath = path;
-    
-    const directions = generateDirections(path);
-    let stepsHtml = '<ol class="list-decimal pl-5 space-y-1">';
-    directions.forEach(step => {
-        stepsHtml += `<li>${step}</li>`;
-    });
-    stepsHtml += '</ol>';
-    routeSteps.innerHTML = stepsHtml;
-
-    // Highlight the path on the map
-    highlightCurrentPathOnFloor();
-
-    // ✅ CORRECTED: QR Code generation with YOUR EXACT URL
-    // Use https://knight-archcode.github.io/mysite/ (NOT my-website)
-    const startFloor = path[0]?.floor || '1';
-    const endFloor = path[path.length - 1]?.floor || '1';
-    
-    // Build the exact URL with parameters
-    const url = `https://knight-archcode.github.io/mysite/?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&startFloor=${startFloor}&endFloor=${endFloor}`;
-    
-    // Clear the QR code div
-    qrcodeDiv.innerHTML = '';
-    
-    // Debug: Log the URL to console
-    console.log('Generating QR code for URL:', url);
-    console.log('URL verification - contains "mysite":', url.includes('mysite'));
-    console.log('URL verification - NOT "my-website":', !url.includes('my-website'));
-    
-    try {
-        // Create QR code
-        const typeNumber = 0; // Auto detect type
-        const errorCorrectionLevel = 'M'; // Medium error correction
-        const qr = qrcode(typeNumber, errorCorrectionLevel);
-        
-        // Add the URL data
-        qr.addData(url);
-        qr.make();
-        
-        // Generate SVG
-        const svgTag = qr.createSvgTag(4, 8);
-        
-        // Create container for QR code and info
-        const qrContainer = document.createElement('div');
-        qrContainer.className = 'flex flex-col items-center';
-        qrContainer.innerHTML = `
-            ${svgTag}
-            <div class="mt-3 text-center">
-                <p class="text-xs text-gray-600 mb-1">Scan to view route on:</p>
-                <p class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                    knight-archcode.github.io/mysite
-                </p>
-            </div>
-        `;
-        
-        qrcodeDiv.appendChild(qrContainer);
-        
-        // Verify the QR code contains correct data
-        setTimeout(() => {
-            const qrSvg = qrcodeDiv.querySelector('svg');
-            if (qrSvg) {
-                console.log('QR code SVG generated successfully');
-            } else {
-                console.error('QR code SVG not found!');
-            }
-        }, 100);
-        
-    } catch (e) {
-        console.error("QR Generation Error:", e);
-        qrcodeDiv.innerHTML = `
-            <div class="text-center p-4 border border-red-200 rounded-lg bg-red-50">
-                <div class="text-red-500 mb-2">
-                    <i data-feather="alert-triangle" class="w-8 h-8 mx-auto"></i>
-                </div>
-                <p class="text-red-600 font-medium mb-2">QR Generation Failed</p>
-                <p class="text-gray-600 text-sm mb-3">Manual URL:</p>
-                <a href="${url}" target="_blank" 
-                   class="text-blue-600 text-xs underline break-all inline-block bg-white p-2 rounded border">
-                   ${url}
-                </a>
-                <p class="text-gray-500 text-xs mt-3">(Make sure your site is published at this URL)</p>
-            </div>
-        `;
-        
-        // Refresh feather icons
-        if (typeof feather !== 'undefined') {
-            feather.replace();
+        try {
+            const typeNumber = 0;
+            const errorCorrectionLevel = 'M';
+            const qr = qrcode(typeNumber, errorCorrectionLevel);
+            qr.addData(url);
+            qr.make();
+            const svgTag = qr.createSvgTag(4, 8);
+            qrcodeDiv.innerHTML = svgTag;
+        } catch (e) {
+            console.error("QR Error:", e);
+            qrcodeDiv.innerHTML = '<p class="text-red-500 text-sm">QR generation failed</p>';
         }
     }
-}
+});
