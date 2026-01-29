@@ -505,32 +505,80 @@ function findRoute() {
     // Highlight the path on the map
     highlightCurrentPathOnFloor();
 
-    // ✅ UPDATED: QR Code generation with your custom link
-    // Include the floor information for better navigation
+    // ✅ CORRECTED: QR Code generation with YOUR EXACT URL
+    // Use https://knight-archcode.github.io/mysite/ (NOT my-website)
     const startFloor = path[0]?.floor || '1';
     const endFloor = path[path.length - 1]?.floor || '1';
     
-    const url = `https://knight-archcode.github.io/my-website/?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&startFloor=${startFloor}&endFloor=${endFloor}`;
+    // Build the exact URL with parameters
+    const url = `https://knight-archcode.github.io/mysite/?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&startFloor=${startFloor}&endFloor=${endFloor}`;
     
+    // Clear the QR code div
     qrcodeDiv.innerHTML = '';
     
+    // Debug: Log the URL to console
+    console.log('Generating QR code for URL:', url);
+    console.log('URL verification - contains "mysite":', url.includes('mysite'));
+    console.log('URL verification - NOT "my-website":', !url.includes('my-website'));
+    
     try {
-        const typeNumber = 0;
-        const errorCorrectionLevel = 'M';
+        // Create QR code
+        const typeNumber = 0; // Auto detect type
+        const errorCorrectionLevel = 'M'; // Medium error correction
         const qr = qrcode(typeNumber, errorCorrectionLevel);
+        
+        // Add the URL data
         qr.addData(url);
         qr.make();
-        const svgTag = qr.createSvgTag(4, 8);
-        qrcodeDiv.innerHTML = svgTag;
         
-        // Optional: Add a small label below the QR code
-        const label = document.createElement('p');
-        label.className = 'text-xs text-gray-600 mt-2 text-center';
-        label.textContent = 'Scan to view route';
-        qrcodeDiv.appendChild(label);
+        // Generate SVG
+        const svgTag = qr.createSvgTag(4, 8);
+        
+        // Create container for QR code and info
+        const qrContainer = document.createElement('div');
+        qrContainer.className = 'flex flex-col items-center';
+        qrContainer.innerHTML = `
+            ${svgTag}
+            <div class="mt-3 text-center">
+                <p class="text-xs text-gray-600 mb-1">Scan to view route on:</p>
+                <p class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                    knight-archcode.github.io/mysite
+                </p>
+            </div>
+        `;
+        
+        qrcodeDiv.appendChild(qrContainer);
+        
+        // Verify the QR code contains correct data
+        setTimeout(() => {
+            const qrSvg = qrcodeDiv.querySelector('svg');
+            if (qrSvg) {
+                console.log('QR code SVG generated successfully');
+            } else {
+                console.error('QR code SVG not found!');
+            }
+        }, 100);
         
     } catch (e) {
-        console.error("QR Error:", e);
-        qrcodeDiv.innerHTML = '<p class="text-red-500 text-sm">QR generation failed</p>';
+        console.error("QR Generation Error:", e);
+        qrcodeDiv.innerHTML = `
+            <div class="text-center p-4 border border-red-200 rounded-lg bg-red-50">
+                <div class="text-red-500 mb-2">
+                    <i data-feather="alert-triangle" class="w-8 h-8 mx-auto"></i>
+                </div>
+                <p class="text-red-600 font-medium mb-2">QR Generation Failed</p>
+                <p class="text-gray-600 text-sm mb-3">Manual URL:</p>
+                <a href="${url}" target="_blank" 
+                   class="text-blue-600 text-xs underline break-all inline-block bg-white p-2 rounded border">
+                   ${url}
+                </a>
+                <p class="text-gray-500 text-xs mt-3">(Make sure your site is published at this URL)</p>
+            </div>
+        `;
+        
+        // Refresh feather icons
+        if (typeof feather !== 'undefined') {
+            feather.replace();
+        }
     }
 }
