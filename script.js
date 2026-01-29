@@ -16,29 +16,39 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (!hotelData.floors) hotelData.floors = {};
 
-
-// In your script.js, add this debug code at the beginning:
-console.log('QR Code Library Loaded:', typeof qrcode);
-console.log('Current page URL:', window.location.href);
-
-// Also check if there are any other QR code generation functions    
-// ✅ OVERRIDE: Force specific URL for QR codes
-function generateQRCodeForRoute(from, to) {
-    // ALWAYS use your GitHub Pages URL
-    const baseUrl = 'https://knight-archcode.github.io/mysite/';
+    // Debug logging
+    console.log('QR Code Library Loaded:', typeof qrcode);
+    console.log('Current page URL:', window.location.href);
     
-    // Build query parameters
-    const params = new URLSearchParams({
-        from: from,
-        to: to,
-        source: 'hotel_navigator_qr',
-        timestamp: Date.now()
-    });
-    
-    return `${baseUrl}?${params.toString()}`;
-}
-
-
+    // ✅ OVERRIDE: Force specific URL for QR codes
+    function generateQRCodeForRoute(from, to) {
+        // Find the markers to get floor info
+        const fromMarker = allMarkers.find(m => m.name === from);
+        const toMarker = allMarkers.find(m => m.name === to);
+        
+        // ALWAYS use your GitHub Pages URL
+        const baseUrl = 'https://knight-archcode.github.io/mysite/';
+        
+        // Build query parameters
+        const params = new URLSearchParams({
+            from: from,
+            to: to,
+            source: 'hotel_navigator_qr',
+            timestamp: Date.now()
+        });
+        
+        // Add floor information if available
+        if (fromMarker && fromMarker.floor) {
+            params.set('startFloor', fromMarker.floor);
+        }
+        if (toMarker && toMarker.floor) {
+            params.set('endFloor', toMarker.floor);
+        }
+        
+        const fullUrl = `${baseUrl}?${params.toString()}`;
+        console.log('Generated QR URL:', fullUrl);
+        return fullUrl;
+    }
     
     // Flatten all markers with floor info
     let allMarkers = [];
@@ -214,7 +224,7 @@ function generateQRCodeForRoute(from, to) {
         hotelMapContainer.appendChild(div);
     }
 
-    // ✅ NEW: Draw path segment with highlighting
+    // Draw path segment with highlighting
     function drawPathSegment(x1, y1, x2, y2, isElevator = false) {
         const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
         const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
@@ -223,11 +233,11 @@ function generateQRCodeForRoute(from, to) {
         
         // Different styling for elevator segments
         if (isElevator) {
-            div.style.background = '#f59e0b'; // Orange for elevators
+            div.style.background = '#f59e0b';
             div.style.border = '2px dashed #d97706';
             div.style.height = '6px';
         } else {
-            div.style.background = '#ef4444'; // Red for walking paths
+            div.style.background = '#ef4444';
             div.style.height = '4px';
         }
         
@@ -238,15 +248,13 @@ function generateQRCodeForRoute(from, to) {
         div.style.zIndex = '5';
         div.style.opacity = '0.9';
         div.style.boxShadow = '0 0 8px rgba(239, 68, 68, 0.5)';
-        
-        // Add animation
         div.style.animation = 'pulse 2s infinite';
         
         hotelMapContainer.appendChild(div);
         currentFloorPathSegments.push(div);
     }
 
-    // ✅ NEW: Highlight path segments on current floor
+    // Highlight path segments on current floor
     function highlightCurrentPathOnFloor() {
         // Clear existing path segments
         currentFloorPathSegments.forEach(segment => segment.remove());
@@ -268,7 +276,6 @@ function generateQRCodeForRoute(from, to) {
             else if (currentMarker.icon === '🛗' && nextMarker.icon === '🛗') {
                 // If either elevator is on current floor, show a special marker
                 if (currentMarker.floor === currentFloor) {
-                    // Draw elevator indicator
                     drawElevatorIndicator(currentMarker.x, currentMarker.y);
                 }
             }
@@ -286,7 +293,7 @@ function generateQRCodeForRoute(from, to) {
         }
     }
 
-    // ✅ NEW: Highlight a marker
+    // Highlight a marker
     function highlightMarker(marker, highlight, type = 'normal') {
         const markerElements = document.querySelectorAll('.marker');
         markerElements.forEach(el => {
@@ -302,10 +309,10 @@ function generateQRCodeForRoute(from, to) {
                     
                     // Add special styling based on type
                     if (type === 'start') {
-                        el.style.border = '3px solid #10b981'; // Green for start
+                        el.style.border = '3px solid #10b981';
                         el.style.borderRadius = '50%';
                     } else if (type === 'end') {
-                        el.style.border = '3px solid #3b82f6'; // Blue for end
+                        el.style.border = '3px solid #3b82f6';
                         el.style.borderRadius = '50%';
                     }
                 } else {
@@ -318,7 +325,7 @@ function generateQRCodeForRoute(from, to) {
         });
     }
 
-    // ✅ NEW: Draw elevator indicator
+    // Draw elevator indicator
     function drawElevatorIndicator(x, y) {
         const indicator = document.createElement('div');
         indicator.className = 'elevator-indicator';
@@ -529,21 +536,49 @@ function generateQRCodeForRoute(from, to) {
         // Highlight the path on the map
         highlightCurrentPathOnFloor();
 
-        // QR Code generation
-    // Then in findRoute function, replace the URL generation with:
-const url = generateQRCodeForRoute(from, to);
+        // ✅ FIXED: QR Code generation
+        const url = generateQRCodeForRoute(from, to);
+        
+        // Clear the QR code div
+        qrcodeDiv.innerHTML = '';
         
         try {
-            const typeNumber = 0;
-            const errorCorrectionLevel = 'M';
+            // Generate QR code
+            const typeNumber = 0; // Auto-detect type
+            const errorCorrectionLevel = 'M'; // Medium error correction
             const qr = qrcode(typeNumber, errorCorrectionLevel);
+            
+            // Add the URL to QR code
             qr.addData(url);
             qr.make();
+            
+            // Create SVG
             const svgTag = qr.createSvgTag(4, 8);
-            qrcodeDiv.innerHTML = svgTag;
+            
+            // Create container for QR code
+            const container = document.createElement('div');
+            container.className = 'flex flex-col items-center';
+            container.innerHTML = `
+                ${svgTag}
+                <div class="mt-2 text-center">
+                    <p class="text-xs text-gray-600">Scan for route</p>
+                    <p class="text-xs text-blue-600 font-medium mt-1">
+                        knight-archcode.github.io/mysite
+                    </p>
+                </div>
+            `;
+            
+            // Add to DOM
+            qrcodeDiv.appendChild(container);
+            
         } catch (e) {
             console.error("QR Error:", e);
-            qrcodeDiv.innerHTML = '<p class="text-red-500 text-sm">QR generation failed</p>';
+            qrcodeDiv.innerHTML = `
+                <div class="text-center p-4">
+                    <p class="text-red-500 text-sm mb-2">QR generation failed</p>
+                    <p class="text-xs text-gray-500 break-all">${url}</p>
+                </div>
+            `;
         }
     }
 });
