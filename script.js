@@ -1,4 +1,4 @@
-// script.js - Complete with mobile fixes and auto-expanding route box
+// script.js - Complete with proper marker positioning scaling
 
 document.addEventListener('DOMContentLoaded', async () => {
     feather.replace();
@@ -12,14 +12,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const qrcodeDiv = document.getElementById('qrcode');
     const guestFloorSelect = document.getElementById('guestFloorSelect');
 
-    // ✅ SUPABASE CONFIGURATION - YOUR CREDENTIALS
+    // ✅ SUPABASE CONFIGURATION
     const SUPABASE_URL = 'https://ejqrlglwogjpabmojfly.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqcXJsZ2x3b2dqcGFibW9qZmx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3MTU1NTcsImV4cCI6MjA4NTI5MTU1N30.OQeRNExX5PHG9BVmthuUFebVyyahg7tZWmmqCOLGBnE';
     let supabaseClient = null;
     let hotelId = 'default_hotel';
     
+    // Store original image dimensions for scaling
+    let originalImageWidth = 0;
+    let originalImageHeight = 0;
+    let imageScaleX = 1;
+    let imageScaleY = 1;
+    let imageOffsetX = 0;
+    let imageOffsetY = 0;
+    
     try {
-        // Initialize Supabase with correct options
         supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
             auth: {
                 persistSession: false
@@ -83,7 +90,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // ✅ SIMPLE DIRECT FETCH FUNCTION (Fallback)
     async function fetchFromCloudDirect() {
         try {
             const response = await fetch(
@@ -143,49 +149,56 @@ document.addEventListener('DOMContentLoaded', async () => {
         return { from: fromParam, to: toParam };
     }
 
+    // ✅ FUNCTION: Calculate image scaling and positioning
+    function calculateImageScaling() {
+        if (!floorPlanImg.complete || !floorPlanImg.naturalWidth) {
+            console.log('Image not loaded yet, cannot calculate scaling');
+            return;
+        }
+        
+        const containerRect = hotelMapContainer.getBoundingClientRect();
+        const imgRect = floorPlanImg.getBoundingClientRect();
+        
+        // Store original image dimensions
+        originalImageWidth = floorPlanImg.naturalWidth;
+        originalImageHeight = floorPlanImg.naturalHeight;
+        
+        console.log('Original image dimensions:', originalImageWidth, 'x', originalImageHeight);
+        console.log('Displayed image dimensions:', imgRect.width, 'x', imgRect.height);
+        console.log('Container dimensions:', containerRect.width, 'x', containerRect.height);
+        
+        // Calculate scaling factors
+        imageScaleX = imgRect.width / originalImageWidth;
+        imageScaleY = imgRect.height / originalImageHeight;
+        
+        // Calculate image offset (centering)
+        imageOffsetX = (containerRect.width - imgRect.width) / 2;
+        imageOffsetY = (containerRect.height - imgRect.height) / 2;
+        
+        console.log('Scaling factors:', { imageScaleX, imageScaleY });
+        console.log('Image offset:', { imageOffsetX, imageOffsetY });
+    }
+
+    // ✅ FUNCTION: Convert original marker coordinates to display coordinates
+    function getDisplayPosition(originalX, originalY) {
+        // Apply scaling and offset
+        const displayX = (originalX * imageScaleX) + imageOffsetX;
+        const displayY = (originalY * imageScaleY) + imageOffsetY;
+        
+        return { x: displayX, y: displayY };
+    }
+
     // ✅ FUNCTION: Auto-expand route box
     function updateRouteBoxHeight() {
         if (!routeSteps) return;
         
-        // Reset to minimum height first
         routeSteps.style.minHeight = '120px';
-        
-        // Calculate content height
         const contentHeight = routeSteps.scrollHeight;
-        
-        // Set new minimum height (with some padding)
-        const newHeight = Math.min(Math.max(contentHeight, 120), 400); // Min 120px, Max 400px
+        const newHeight = Math.min(Math.max(contentHeight, 120), 400);
         routeSteps.style.minHeight = `${newHeight}px`;
-        
-        // Add smooth transition
         routeSteps.style.transition = 'min-height 0.3s ease';
         
         console.log('Route box height updated:', newHeight, 'px');
-    }
-
-    // ✅ FUNCTION: Adjust markers for mobile
-    function adjustMarkersForMobile() {
-        if (!window.matchMedia("(max-width: 768px)").matches) {
-            return; // Only adjust on mobile
-        }
-        
-        const markers = document.querySelectorAll('.marker');
-        const containerWidth = hotelMapContainer.offsetWidth;
-        const containerHeight = hotelMapContainer.offsetHeight;
-        
-        markers.forEach(marker => {
-            const currentLeft = parseFloat(marker.style.left) || 0;
-            const currentTop = parseFloat(marker.style.top) || 0;
-            
-            // Scale marker positions if needed
-            if (currentLeft > containerWidth || currentTop > containerHeight) {
-                const scaleX = containerWidth / 1000;
-                const scaleY = containerHeight / 800;
-                
-                marker.style.left = `${currentLeft * Math.min(scaleX, scaleY)}px`;
-                marker.style.top = `${currentTop * Math.min(scaleX, scaleY)}px`;
-            }
-        });
     }
 
     // ✅ FUNCTION: Debug marker positions
@@ -195,24 +208,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         markers.forEach((marker, index) => {
             const rect = marker.getBoundingClientRect();
-            console.log(`Marker ${index}:`, {
-                name: marker.getAttribute('data-marker-name'),
-                left: marker.style.left,
-                top: marker.style.top,
-                computedLeft: rect.left,
-                computedTop: rect.top,
-                width: rect.width,
-                height: rect.height,
+            const containerRect = hotelMapContainer.getBoundingClientRect();
+            
+            // Calculate position relative to container
+            const relativeX = rect.left - containerRect.left + (rect.width / 2);
+            const relativeY = rect.top - containerRect.top + (rect.height / 2);
+            
+            console.log(`Marker ${index} (${marker.getAttribute('data-marker-name')}):`, {
+                originalX: marker.getAttribute('data-original-x'),
+                originalY: marker.getAttribute('data-original-y'),
+                displayedX: marker.style.left,
+                displayedY: marker.style.top,
+                relativeToContainer: { x: relativeX, y: relativeY },
                 visible: rect.width > 0 && rect.height > 0
             });
-        });
-        
-        const containerRect = hotelMapContainer.getBoundingClientRect();
-        console.log('Container:', {
-            width: containerRect.width,
-            height: containerRect.height,
-            left: containerRect.left,
-            top: containerRect.top
         });
     }
 
@@ -222,7 +231,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load data with priority: 1. localStorage, 2. Cloud, 3. URL
     let hotelData = JSON.parse(localStorage.getItem('hotelData') || '{}');
     
-    // If no data in localStorage, try cloud (using direct fetch as fallback)
     if (Object.keys(hotelData).length === 0) {
         let cloudResult;
         
@@ -315,12 +323,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                 hotelMapContainer.style.display = 'flex';
                 hotelMapContainer.style.alignItems = 'center';
                 hotelMapContainer.style.justifyContent = 'center';
+                
+                // ✅ Calculate scaling after image loads
+                setTimeout(() => {
+                    calculateImageScaling();
+                    renderMap();
+                }, 100);
             };
             
             testImage.onerror = function() {
                 console.error('Guest: Failed to load image for floor', floorNum);
                 floorPlanImg.style.display = 'none';
                 floorPlanImg.src = '';
+                renderMap();
             };
             
             testImage.src = floorPlanUrl;
@@ -328,9 +343,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.log('Guest: No image for floor', floorNum);
             floorPlanImg.src = '';
             floorPlanImg.style.display = 'none';
+            renderMap();
         }
-
-        renderMap();
+        
         // Re-highlight path when switching floors
         highlightCurrentPathOnFloor();
     }
@@ -341,13 +356,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadFloor(currentFloor);
         updateLocationDropdowns();
         
-        // ✅ Auto-set from URL parameters if provided
         if (urlParams.from && urlParams.to) {
             setTimeout(() => {
                 if (fromSelect) fromSelect.value = urlParams.from;
                 if (toSelect) toSelect.value = urlParams.to;
                 
-                // Auto-find route after UI loads
                 setTimeout(() => {
                     if (findBtn) findBtn.click();
                 }, 1000);
@@ -393,8 +406,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function renderMap() {
         console.log('Guest: Rendering map for floor', currentFloor);
-        // Clear all elements except the path segments (we'll handle those separately)
-        document.querySelectorAll('.marker, .connection').forEach(el => el.remove());
+        document.querySelectorAll('.marker, .connection, .path-segment').forEach(el => el.remove());
 
         const floorMarkers = allMarkers.filter(m => m.floor === currentFloor);
         console.log('Guest: Markers on this floor:', floorMarkers.length);
@@ -405,20 +417,33 @@ document.addEventListener('DOMContentLoaded', async () => {
             el.textContent = marker.icon;
             el.title = marker.name;
             
-            // ✅ FIX: Ensure markers are positioned correctly
-            el.style.left = `${marker.x}px`;
-            el.style.top = `${marker.y}px`;
+            // ✅ Store original coordinates for debugging
+            el.setAttribute('data-marker-name', marker.name);
+            el.setAttribute('data-marker-id', marker.id);
+            el.setAttribute('data-original-x', marker.x);
+            el.setAttribute('data-original-y', marker.y);
+            
+            // ✅ Calculate display position based on image scaling
+            let displayX, displayY;
+            
+            if (floorPlanImg.style.display === 'block' && originalImageWidth > 0) {
+                const displayPos = getDisplayPosition(marker.x, marker.y);
+                displayX = displayPos.x;
+                displayY = displayPos.y;
+                
+                console.log(`Marker "${marker.name}": Original (${marker.x}, ${marker.y}) -> Display (${displayX}, ${displayY})`);
+            } else {
+                // If no image, use original coordinates (for debugging)
+                displayX = marker.x;
+                displayY = marker.y;
+            }
+            
+            el.style.left = `${displayX}px`;
+            el.style.top = `${displayY}px`;
             el.style.position = 'absolute';
             el.style.zIndex = '10';
             
-            // ✅ Add data attributes for debugging
-            el.setAttribute('data-marker-name', marker.name);
-            el.setAttribute('data-marker-id', marker.id);
-            
             hotelMapContainer.appendChild(el);
-            
-            // ✅ Debug log for mobile
-            console.log(`Marker placed: ${marker.name} at (${marker.x}, ${marker.y})`);
         });
 
         const floorConnections = (hotelData.floors[currentFloor]?.connections || []);
@@ -426,25 +451,32 @@ document.addEventListener('DOMContentLoaded', async () => {
             const m1 = allMarkers.find(m => m.id === id1);
             const m2 = allMarkers.find(m => m.id === id2);
             if (m1 && m2 && m1.floor === currentFloor && m2.floor === currentFloor) {
-                drawConnection(m1.x, m1.y, m2.x, m2.y, 'connection');
+                drawConnection(m1, m2, 'connection');
             }
         });
         
-        // ✅ Adjust markers for mobile
-        setTimeout(adjustMarkersForMobile, 50);
-        
         // ✅ Debug marker positions
-        setTimeout(debugMarkerPositions, 100);
-        
-        // ✅ Force a reflow to ensure markers are visible
-        setTimeout(() => {
-            hotelMapContainer.style.display = 'none';
-            hotelMapContainer.offsetHeight; // Trigger reflow
-            hotelMapContainer.style.display = 'flex';
-        }, 10);
+        setTimeout(debugMarkerPositions, 200);
     }
 
-    function drawConnection(x1, y1, x2, y2, className) {
+    // ✅ UPDATED: Draw connection with scaled positions
+    function drawConnection(marker1, marker2, className) {
+        let x1, y1, x2, y2;
+        
+        if (floorPlanImg.style.display === 'block' && originalImageWidth > 0) {
+            const pos1 = getDisplayPosition(marker1.x, marker1.y);
+            const pos2 = getDisplayPosition(marker2.x, marker2.y);
+            x1 = pos1.x;
+            y1 = pos1.y;
+            x2 = pos2.x;
+            y2 = pos2.y;
+        } else {
+            x1 = marker1.x;
+            y1 = marker1.y;
+            x2 = marker2.x;
+            y2 = marker2.y;
+        }
+        
         const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
         const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
         const div = document.createElement('div');
@@ -457,14 +489,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         hotelMapContainer.appendChild(div);
     }
 
-    // Draw path segment with highlighting
-    function drawPathSegment(x1, y1, x2, y2, isElevator = false) {
+    // ✅ UPDATED: Draw path segment with scaled positions
+    function drawPathSegment(marker1, marker2, isElevator = false) {
+        let x1, y1, x2, y2;
+        
+        if (floorPlanImg.style.display === 'block' && originalImageWidth > 0) {
+            const pos1 = getDisplayPosition(marker1.x, marker1.y);
+            const pos2 = getDisplayPosition(marker2.x, marker2.y);
+            x1 = pos1.x;
+            y1 = pos1.y;
+            x2 = pos2.x;
+            y2 = pos2.y;
+        } else {
+            x1 = marker1.x;
+            y1 = marker1.y;
+            x2 = marker2.x;
+            y2 = marker2.y;
+        }
+        
         const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
         const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
         const div = document.createElement('div');
         div.className = 'path-segment';
         
-        // Different styling for elevator segments
         if (isElevator) {
             div.style.background = '#f59e0b';
             div.style.border = '2px dashed #d97706';
@@ -487,34 +534,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentFloorPathSegments.push(div);
     }
 
-    // Highlight path segments on current floor
+    // ✅ UPDATED: Highlight path segments with scaled positions
     function highlightCurrentPathOnFloor() {
-        // Clear existing path segments
         currentFloorPathSegments.forEach(segment => segment.remove());
         currentFloorPathSegments = [];
         
         if (currentPath.length < 2) return;
         
-        // Find segments that belong to current floor
         for (let i = 0; i < currentPath.length - 1; i++) {
             const currentMarker = currentPath[i];
             const nextMarker = currentPath[i + 1];
             
-            // Check if both markers are on current floor
             if (currentMarker.floor === currentFloor && nextMarker.floor === currentFloor) {
-                // Regular connection on same floor
-                drawPathSegment(currentMarker.x, currentMarker.y, nextMarker.x, nextMarker.y, false);
-            } 
-            // Check if this is an elevator connection point
-            else if (currentMarker.icon === '🛗' && nextMarker.icon === '🛗') {
-                // If either elevator is on current floor, show a special marker
+                drawPathSegment(currentMarker, nextMarker, false);
+            } else if (currentMarker.icon === '🛗' && nextMarker.icon === '🛗') {
                 if (currentMarker.floor === currentFloor) {
-                    drawElevatorIndicator(currentMarker.x, currentMarker.y);
+                    drawElevatorIndicator(currentMarker);
                 }
             }
         }
         
-        // Highlight the start and end markers if they're on this floor
         const startMarker = currentPath[0];
         const endMarker = currentPath[currentPath.length - 1];
         
@@ -526,21 +565,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Highlight a marker
+    // ✅ UPDATED: Highlight marker with scaled position
     function highlightMarker(marker, highlight, type = 'normal') {
         const markerElements = document.querySelectorAll('.marker');
         markerElements.forEach(el => {
-            const x = parseFloat(el.style.left);
-            const y = parseFloat(el.style.top);
-            
-            // Find the matching marker by position
-            if (Math.abs(x - marker.x) < 5 && Math.abs(y - marker.y) < 5) {
+            const markerId = el.getAttribute('data-marker-id');
+            if (markerId === marker.id) {
                 if (highlight) {
                     el.style.transform = 'translate(-50%, -50%) scale(1.3)';
                     el.style.zIndex = '20';
                     el.style.boxShadow = '0 0 15px rgba(0, 0, 0, 0.7)';
                     
-                    // Add special styling based on type
                     if (type === 'start') {
                         el.style.border = '3px solid #10b981';
                         el.style.borderRadius = '50%';
@@ -561,8 +596,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Draw elevator indicator
-    function drawElevatorIndicator(x, y) {
+    // ✅ UPDATED: Draw elevator indicator with scaled position
+    function drawElevatorIndicator(marker) {
+        let x, y;
+        
+        if (floorPlanImg.style.display === 'block' && originalImageWidth > 0) {
+            const pos = getDisplayPosition(marker.x, marker.y);
+            x = pos.x;
+            y = pos.y;
+        } else {
+            x = marker.x;
+            y = marker.y;
+        }
+        
         const indicator = document.createElement('div');
         indicator.className = 'elevator-indicator';
         indicator.style.position = 'absolute';
@@ -741,11 +787,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             routeSteps.innerHTML = '<p class="text-gray-400 text-center py-8">Select both start and destination locations</p>';
             qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">Route QR appears here</p>';
             
-            // Clear any existing highlighting
             currentPath = [];
             highlightCurrentPathOnFloor();
-            
-            // Update route box height
             setTimeout(updateRouteBoxHeight, 10);
             return;
         }
@@ -755,35 +798,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             routeSteps.innerHTML = '<p class="text-red-600 text-center py-8">No path found between these locations.</p>';
             qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">No route available</p>';
             
-            // Clear any existing highlighting
             currentPath = [];
             highlightCurrentPathOnFloor();
-            
-            // Update route box height
             setTimeout(updateRouteBoxHeight, 10);
             return;
         }
 
-        // Store the current path
         currentPath = path;
         
         const directions = generateDirections(path);
-        let stepsHtml = '<ol class="list-decimal pl-5 space-y-3">'; // ✅ Added more spacing
+        let stepsHtml = '<ol class="list-decimal pl-5 space-y-3">';
         directions.forEach((step, index) => {
             stepsHtml += `<li class="py-1 ${index === 0 || index === directions.length - 1 ? 'font-semibold' : ''}">${step}</li>`;
         });
         stepsHtml += '</ol>';
         routeSteps.innerHTML = stepsHtml;
 
-        // Highlight the path on the map
         highlightCurrentPathOnFloor();
-
-        // ✅ Update route box height after content is rendered
         setTimeout(updateRouteBoxHeight, 50);
 
-        // ✅ QR Code generation with Cloud URL
         const url = generateShareableUrl(from, to);
-        
         qrcodeDiv.innerHTML = '';
         
         try {
@@ -822,6 +856,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
+    // ✅ Handle window resize to recalculate marker positions
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            console.log('Window resized, recalculating marker positions...');
+            calculateImageScaling();
+            renderMap();
+        }, 250);
+    });
+    
     // ✅ Add cloud sync status indicator
     function addCloudStatus() {
         const statusDiv = document.createElement('div');
@@ -838,6 +883,5 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.body.appendChild(statusDiv);
     }
     
-    // Initialize cloud status
     addCloudStatus();
 });
