@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test QR Code</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .qr-container { margin: 20px 0; padding: 20px; border: 1px solid #ccc; }
+        .url-display { background: #f0f0f0; padding: 10px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Test QR Code Generation</h1>
+    
+    <div class="qr-container">
+        <h3>Test 1: Your GitHub Pages URL</h3>
+        <div id="qr1"></div>
+        <div class="url-display" id="url1"></div>
+    </div>
+    
+    <script>
+        // Test 1: Your exact URL
+        const url1 = 'https://knight-archcode.github.io/mysite/';
+        document.getElementById('url1').textContent = url1;
+        
+        try {
+            const qr1 = qrcode(0, 'M');
+            qr1.addData(url1);
+            qr1.make();
+            document.getElementById('qr1').innerHTML = qr1.createSvgTag(4, 8);
+            console.log('Test 1 QR generated for:', url1);
+        } catch(e) {
+            console.error('Test 1 failed:', e);
+        }
+        
+        // Test 2: URL with parameters
+        const url2 = 'https://knight-archcode.github.io/mysite/?from=Lobby&to=Room+205';
+        setTimeout(() => {
+            const qr2 = qrcode(0, 'M');
+            qr2.addData(url2);
+            qr2.make();
+            document.getElementById('qr2').innerHTML = qr2.createSvgTag(4, 8);
+            document.getElementById('url2').textContent = url2;
+            console.log('Test 2 QR generated for:', url2);
+        }, 100);
+    </script>
+    
+    <div class="qr-container">
+        <h3>Test 2: URL with Parameters</h3>
+        <div id="qr2"></div>
+        <div class="url-display" id="url2"></div>
+    </div>
+    
+    <div class="qr-container">
+        <h3>Instructions:</h3>
+        <ol>
+            <li>Scan the QR codes with your phone</li>
+            <li>Check where they redirect</li>
+            <li>Make sure it goes to YOUR GitHub Pages site</li>
+        </ol>
+    </div>
+</body>
+</html>
