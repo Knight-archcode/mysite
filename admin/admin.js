@@ -1,6 +1,8 @@
+// admin/admin.js - Admin Panel with Supabase Cloud Sync
+
 let isLoggedIn = false;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const loginSection = document.getElementById('loginSection');
     const adminPanel = document.getElementById('adminPanel');
     const loginForm = document.getElementById('loginForm');
@@ -38,11 +40,88 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedIcon = '🛏️';
     let firstSelectedMarker = null;
 
-    // ✅ FIXED: PROPER DATA INITIALIZATION
+    // ✅ SUPABASE CONFIGURATION - YOUR CREDENTIALS
+    const SUPABASE_URL = 'https://ejqrlglwogjpabmojfly.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqcXJsZ2x3b2dqcGFibW9qZmx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3MTU1NTcsImV4cCI6MjA4NTI5MTU1N30.OQeRNExX5PHG9BVmthuUFebVyyahg7tZWmmqCOLGBnE';
+    let supabaseClient = null;
+    let hotelId = 'default_hotel';
+    
+    try {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        console.log('✅ Admin: Supabase client initialized');
+    } catch (error) {
+        console.warn('⚠️ Admin: Supabase not available');
+    }
+
+    // ✅ CLOUD FUNCTIONS
+    async function saveToCloud() {
+        if (!supabaseClient) {
+            alert('❌ Supabase not configured. Data will be saved locally only.');
+            return { success: false };
+        }
+        
+        try {
+            const hotelData = JSON.parse(localStorage.getItem('hotelData') || '{}');
+            
+            const { data, error } = await supabaseClient
+                .from('hotels')
+                .upsert({
+                    hotel_id: hotelId,
+                    hotel_data: hotelData,
+                    updated_at: new Date().toISOString()
+                }, {
+                    onConflict: 'hotel_id'
+                });
+            
+            if (error) throw error;
+            
+            console.log('✅ Admin: Hotel data saved to cloud');
+            return { success: true, data };
+        } catch (error) {
+            console.error('❌ Admin: Error saving to cloud:', error);
+            return { success: false, error };
+        }
+    }
+
+    async function loadFromCloud() {
+        if (!supabaseClient) return { success: false, error: 'No Supabase client' };
+        
+        try {
+            const { data, error } = await supabaseClient
+                .from('hotels')
+                .select('hotel_data')
+                .eq('hotel_id', hotelId)
+                .single();
+            
+            if (error && error.code !== 'PGRST116') throw error;
+            
+            if (data) {
+                console.log('✅ Admin: Hotel data loaded from cloud');
+                return { success: true, data: data.hotel_data };
+            } else {
+                console.log('ℹ️ Admin: No hotel data found in cloud');
+                return { success: true, data: null };
+            }
+        } catch (error) {
+            console.error('❌ Admin: Error loading from cloud:', error);
+            return { success: false, error };
+        }
+    }
+
+    // ✅ SAFE DATA INITIALIZATION
     let hotelData = JSON.parse(localStorage.getItem('hotelData') || '{}');
     
-    // Debug: Check what's in localStorage
-    console.log('Initial hotelData:', hotelData);
+    // Load from cloud on admin login
+    if (supabaseClient) {
+        const cloudResult = await loadFromCloud();
+        if (cloudResult.success && cloudResult.data) {
+            hotelData = cloudResult.data;
+            localStorage.setItem('hotelData', JSON.stringify(hotelData));
+            console.log('📥 Admin: Loaded data from cloud storage');
+        }
+    }
+    
+    console.log('Admin: Initial hotelData:', hotelData);
     
     if (!hotelData.floors) {
         hotelData.floors = {};
@@ -88,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return hotelData.floors[floorNum];
     }
 
-    // ✅ SAVE ALL DATA
+    // ✅ SAVE ALL DATA (LOCAL + CLOUD)
     function saveData() {
         console.log('Saving data for floors:', Object.keys(hotelData.floors));
         localStorage.setItem('hotelData', JSON.stringify(hotelData));
@@ -114,7 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
         floorWarning.classList.toggle('hidden', floorNums.length > 1);
     }
 
-    // ✅ FIXED: LOAD FLOOR - SEPARATE IMAGES FOR EACH FLOOR
+    // ✅ LOAD FLOOR
     function loadFloor(floorNum) {
         console.log('Loading floor:', floorNum);
         currentFloor = floorNum;
@@ -122,19 +201,17 @@ document.addEventListener('DOMContentLoaded', () => {
         
         console.log('Floor data for', floorNum, ':', {
             hasImage: !!floorData.floorPlanUrl,
-            imageLength: floorData.floorPlanUrl ? floorData.floorPlanUrl.length : 0,
-            imagePrefix: floorData.floorPlanUrl ? floorData.floorPlanUrl.substring(0, 50) + '...' : 'none'
+            imageLength: floorData.floorPlanUrl ? floorData.floorPlanUrl.length : 0
         });
 
-        // ✅ CRITICAL FIX: Clear and reload image properly
+        // Clear and reload image
         floorPlanImg.src = '';
         floorPlanImg.style.display = 'none';
         
-        // ✅ FIXED: Check for ANY valid image data
-        if (floorData.floorPlanUrl && floorData.floorPlanUrl.length > 100) { // Basic check for valid data
+        if (floorData.floorPlanUrl && floorData.floorPlanUrl.length > 100) {
             console.log('Setting image source for floor', floorNum);
             
-            // Force a fresh load by adding cache-busting parameter
+            // Force a fresh load
             const separator = floorData.floorPlanUrl.includes('?') ? '&' : '?';
             const timestamp = Date.now();
             const imageUrl = floorData.floorPlanUrl + separator + 't=' + timestamp;
@@ -142,9 +219,8 @@ document.addEventListener('DOMContentLoaded', () => {
             floorPlanImg.src = imageUrl;
             floorPlanImg.style.display = 'block';
             
-            // Handle image loading
             floorPlanImg.onload = function() {
-                console.log('Image loaded successfully for floor', floorNum);
+                console.log('Image loaded for floor', floorNum);
                 this.style.display = 'block';
             };
             
@@ -152,10 +228,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Failed to load image for floor', floorNum);
                 this.style.display = 'none';
                 this.src = '';
-                // Try without cache busting
-                if (floorData.floorPlanUrl) {
-                    this.src = floorData.floorPlanUrl;
-                }
             };
         } else {
             console.log('No valid image for floor', floorNum);
@@ -196,6 +268,9 @@ document.addEventListener('DOMContentLoaded', () => {
             loginSection.classList.add('hidden');
             adminPanel.classList.remove('hidden');
             loginError.classList.add('hidden');
+            
+            // Add cloud save button after login
+            addCloudSaveButton();
         } else {
             loginError.classList.remove('hidden');
             loginSection.style.animation = 'shake 0.5s';
@@ -248,6 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ✅ RENAME FLOOR
     renameFloorBtn.addEventListener('click', () => {
         const floorData = getFloorData(currentFloor);
         floorNameInput.value = floorData.name || `Floor ${currentFloor}`;
@@ -268,24 +344,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // === FILE UPLOAD - CRITICAL FIX ===
+    // === FILE UPLOAD ===
     floorPlanUpload.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file && file.type.startsWith('image/')) {
             const reader = new FileReader();
             reader.onload = () => {
                 console.log('Uploading image for floor', currentFloor);
-                // ✅ Save to CURRENT FLOOR only - each floor gets its own image
                 const floorData = getFloorData(currentFloor);
                 floorData.floorPlanUrl = reader.result;
                 console.log('Image saved for floor', currentFloor, 'size:', reader.result.length);
                 
                 saveData();
-                
-                // Force reload of the floor
                 loadFloor(currentFloor);
-                
-                // Clear the file input
                 e.target.value = '';
             };
             reader.onerror = (error) => {
@@ -365,9 +436,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    saveDataBtn.addEventListener('click', () => {
-        saveData();
-        alert('✅ Floor data saved successfully!');
+    // ✅ MODIFIED SAVE BUTTON - SAVES TO CLOUD
+    saveDataBtn.addEventListener('click', async () => {
+        saveData(); // Local save
+        
+        if (supabaseClient) {
+            const result = await saveToCloud();
+            if (result.success) {
+                alert('✅ Saved locally and to cloud!');
+            } else {
+                alert('✅ Saved locally. ❌ Cloud save failed.');
+            }
+        } else {
+            alert('✅ Saved locally (no cloud connection)');
+        }
     });
 
     mapContainer.addEventListener('click', handleMapClick);
@@ -502,5 +584,67 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadFloor(currentFloor);
             });
         });
+    }
+
+    // ✅ ADD CLOUD SAVE BUTTON
+    function addCloudSaveButton() {
+        if (!supabaseClient) return;
+        
+        // Create cloud save button container
+        const cloudContainer = document.createElement('div');
+        cloudContainer.className = 'mt-6 p-4 bg-blue-50 rounded-lg';
+        
+        cloudContainer.innerHTML = `
+            <h3 class="font-semibold text-blue-800 mb-2">Cloud Storage</h3>
+            <div class="flex flex-col gap-2">
+                <button id="cloudSaveBtn" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center justify-center gap-2">
+                    <i data-feather="upload-cloud"></i>
+                    Save to Cloud
+                </button>
+                <button id="cloudLoadBtn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center gap-2">
+                    <i data-feather="download-cloud"></i>
+                    Load from Cloud
+                </button>
+                <p class="text-xs text-gray-600 mt-2">
+                    Hotel ID: <code class="bg-gray-100 px-2 py-1 rounded">${hotelId}</code>
+                </p>
+            </div>
+        `;
+        
+        // Insert after save button
+        saveDataBtn.parentNode.insertBefore(cloudContainer, saveDataBtn.nextSibling);
+        
+        // Add event listeners
+        document.getElementById('cloudSaveBtn').addEventListener('click', async () => {
+            const result = await saveToCloud();
+            if (result.success) {
+                alert('✅ Hotel data saved to cloud!');
+                feather.replace();
+            } else {
+                alert('❌ Failed to save to cloud. Check console.');
+            }
+        });
+        
+        document.getElementById('cloudLoadBtn').addEventListener('click', async () => {
+            if (confirm('Load from cloud? This will replace your current hotel data.')) {
+                const result = await loadFromCloud();
+                if (result.success && result.data) {
+                    hotelData = result.data;
+                    localStorage.setItem('hotelData', JSON.stringify(hotelData));
+                    
+                    if (!hotelData.floors) hotelData.floors = {};
+                    loadFloor(currentFloor);
+                    
+                    alert('✅ Hotel data loaded from cloud!');
+                } else if (result.success && !result.data) {
+                    alert('ℹ️ No hotel data found in cloud.');
+                } else {
+                    alert('❌ Failed to load from cloud. Check console.');
+                }
+            }
+        });
+        
+        // Refresh feather icons
+        feather.replace();
     }
 });
