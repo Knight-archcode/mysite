@@ -1,4 +1,6 @@
-document.addEventListener('DOMContentLoaded', () => {
+// script.js - Guest Navigation with Supabase Cloud Sync
+
+document.addEventListener('DOMContentLoaded', async () => {
     feather.replace();
 
     const hotelMapContainer = document.getElementById('hotelMapContainer');
@@ -10,46 +12,116 @@ document.addEventListener('DOMContentLoaded', () => {
     const qrcodeDiv = document.getElementById('qrcode');
     const guestFloorSelect = document.getElementById('guestFloorSelect');
 
-    // Load data
-    let hotelData = JSON.parse(localStorage.getItem('hotelData') || '{}');
-    console.log('Guest: Loaded hotelData', Object.keys(hotelData.floors || {}));
+    // ✅ SUPABASE CONFIGURATION - YOUR CREDENTIALS
+    const SUPABASE_URL = 'https://ejqrlglwogjpabmojfly.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqcXJsZ2x3b2dqcGFibW9qZmx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3MTU1NTcsImV4cCI6MjA4NTI5MTU1N30.OQeRNExX5PHG9BVmthuUFebVyyahg7tZWmmqCOLGBnE';
+    let supabaseClient = null;
+    let hotelId = 'default_hotel'; // Can be changed for multiple hotels
     
-    if (!hotelData.floors) hotelData.floors = {};
+    try {
+        // Load Supabase client
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        console.log('✅ Supabase client initialized');
+    } catch (error) {
+        console.warn('⚠️ Supabase not available, using localStorage only');
+    }
 
-    // Debug logging
-    console.log('QR Code Library Loaded:', typeof qrcode);
-    console.log('Current page URL:', window.location.href);
-    
-    // ✅ OVERRIDE: Force specific URL for QR codes
-    function generateQRCodeForRoute(from, to) {
-        // Find the markers to get floor info
-        const fromMarker = allMarkers.find(m => m.name === from);
-        const toMarker = allMarkers.find(m => m.name === to);
+    // ✅ CLOUD FUNCTIONS
+    async function saveToCloud(hotelData) {
+        if (!supabaseClient) return { success: false, error: 'No Supabase client' };
         
-        // ALWAYS use your GitHub Pages URL
+        try {
+            const { data, error } = await supabaseClient
+                .from('hotels')
+                .upsert({
+                    hotel_id: hotelId,
+                    hotel_data: hotelData,
+                    updated_at: new Date().toISOString()
+                }, {
+                    onConflict: 'hotel_id'
+                });
+            
+            if (error) throw error;
+            
+            console.log('✅ Hotel data saved to cloud');
+            return { success: true, data };
+        } catch (error) {
+            console.error('❌ Error saving to cloud:', error);
+            return { success: false, error };
+        }
+    }
+
+    async function loadFromCloud() {
+        if (!supabaseClient) return { success: false, error: 'No Supabase client' };
+        
+        try {
+            const { data, error } = await supabaseClient
+                .from('hotels')
+                .select('hotel_data')
+                .eq('hotel_id', hotelId)
+                .single();
+            
+            if (error && error.code !== 'PGRST116') throw error;
+            
+            if (data) {
+                console.log('✅ Hotel data loaded from cloud');
+                return { success: true, data: data.hotel_data };
+            } else {
+                console.log('ℹ️ No hotel data found in cloud');
+                return { success: true, data: null };
+            }
+        } catch (error) {
+            console.error('❌ Error loading from cloud:', error);
+            return { success: false, error };
+        }
+    }
+
+    function generateShareableUrl(from, to) {
         const baseUrl = 'https://knight-archcode.github.io/mysite/';
-        
-        // Build query parameters
         const params = new URLSearchParams({
-            from: from,
-            to: to,
-            source: 'hotel_navigator_qr',
-            timestamp: Date.now()
+            hotel: hotelId,
+            from: from || '',
+            to: to || '',
+            source: 'qr_code',
+            t: Date.now()
         });
         
-        // Add floor information if available
-        if (fromMarker && fromMarker.floor) {
-            params.set('startFloor', fromMarker.floor);
-        }
-        if (toMarker && toMarker.floor) {
-            params.set('endFloor', toMarker.floor);
+        return `${baseUrl}?${params.toString()}`;
+    }
+
+    function loadFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const urlHotelId = params.get('hotel');
+        const fromParam = params.get('from');
+        const toParam = params.get('to');
+        
+        if (urlHotelId) {
+            hotelId = urlHotelId;
+            console.log('📥 Loading hotel:', hotelId);
         }
         
-        const fullUrl = `${baseUrl}?${params.toString()}`;
-        console.log('Generated QR URL:', fullUrl);
-        return fullUrl;
+        return { from: fromParam, to: toParam };
+    }
+
+    // ✅ INITIALIZE: Check URL params first, then load data
+    const urlParams = loadFromUrl();
+    
+    // Load data with priority: 1. localStorage, 2. Cloud, 3. URL
+    let hotelData = JSON.parse(localStorage.getItem('hotelData') || '{}');
+    
+    // If no data in localStorage, try cloud
+    if (Object.keys(hotelData).length === 0 && supabaseClient) {
+        const cloudResult = await loadFromCloud();
+        if (cloudResult.success && cloudResult.data) {
+            hotelData = cloudResult.data;
+            localStorage.setItem('hotelData', JSON.stringify(hotelData));
+            console.log('📥 Loaded from cloud storage');
+        }
     }
     
+    if (!hotelData.floors) hotelData.floors = {};
+    console.log('Guest: Loaded hotelData', Object.keys(hotelData.floors || {}));
+
     // Flatten all markers with floor info
     let allMarkers = [];
     Object.keys(hotelData.floors).forEach(floorNum => {
@@ -146,6 +218,19 @@ document.addEventListener('DOMContentLoaded', () => {
         populateFloorSelect();
         loadFloor(currentFloor);
         updateLocationDropdowns();
+        
+        // ✅ Auto-set from URL parameters if provided
+        if (urlParams.from && urlParams.to) {
+            setTimeout(() => {
+                if (fromSelect) fromSelect.value = urlParams.from;
+                if (toSelect) toSelect.value = urlParams.to;
+                
+                // Auto-find route after UI loads
+                setTimeout(() => {
+                    if (findBtn) findBtn.click();
+                }, 1000);
+            }, 500);
+        }
     } else {
         routeSteps.innerHTML = '<p class="text-gray-500">No floor plans configured. Please use the admin panel.</p>';
     }
@@ -505,7 +590,6 @@ document.addEventListener('DOMContentLoaded', () => {
             routeSteps.innerHTML = '<p class="text-gray-400">Select both start and destination</p>';
             qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm">Route QR appears here</p>';
             
-            // Clear any existing highlighting
             currentPath = [];
             highlightCurrentPathOnFloor();
             return;
@@ -516,7 +600,6 @@ document.addEventListener('DOMContentLoaded', () => {
             routeSteps.innerHTML = '<p class="text-red-600">No path found between these locations.</p>';
             qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm">No route available</p>';
             
-            // Clear any existing highlighting
             currentPath = [];
             highlightCurrentPathOnFloor();
             return;
@@ -536,49 +619,72 @@ document.addEventListener('DOMContentLoaded', () => {
         // Highlight the path on the map
         highlightCurrentPathOnFloor();
 
-        // ✅ FIXED: QR Code generation
-        const url = generateQRCodeForRoute(from, to);
+        // ✅ QR Code generation with Cloud URL
+        const url = generateShareableUrl(from, to);
         
-        // Clear the QR code div
         qrcodeDiv.innerHTML = '';
         
         try {
-            // Generate QR code
-            const typeNumber = 0; // Auto-detect type
-            const errorCorrectionLevel = 'M'; // Medium error correction
+            const typeNumber = 0;
+            const errorCorrectionLevel = 'M';
             const qr = qrcode(typeNumber, errorCorrectionLevel);
-            
-            // Add the URL to QR code
             qr.addData(url);
             qr.make();
-            
-            // Create SVG
             const svgTag = qr.createSvgTag(4, 8);
             
-            // Create container for QR code
             const container = document.createElement('div');
             container.className = 'flex flex-col items-center';
             container.innerHTML = `
                 ${svgTag}
-                <div class="mt-2 text-center">
-                    <p class="text-xs text-gray-600">Scan for route</p>
-                    <p class="text-xs text-blue-600 font-medium mt-1">
-                        knight-archcode.github.io/mysite
+                <div class="mt-3 text-center">
+                    <p class="text-xs text-gray-600 mb-1">Scan to view route</p>
+                    <p class="text-xs text-green-600 font-medium">
+                        ✅ Includes hotel data
+                    </p>
+                    <p class="text-xs text-blue-600 mt-1">
+                        ${url.split('?')[0]}
                     </p>
                 </div>
             `;
             
-            // Add to DOM
             qrcodeDiv.appendChild(container);
             
         } catch (e) {
             console.error("QR Error:", e);
             qrcodeDiv.innerHTML = `
-                <div class="text-center p-4">
+                <div class="text-center p-4 border border-red-200 rounded">
                     <p class="text-red-500 text-sm mb-2">QR generation failed</p>
-                    <p class="text-xs text-gray-500 break-all">${url}</p>
+                    <p class="text-xs text-gray-500 break-all">${url.substring(0, 100)}...</p>
                 </div>
             `;
         }
     }
+    
+    // ✅ Add cloud sync status indicator
+    function addCloudStatus() {
+        const statusDiv = document.createElement('div');
+        statusDiv.id = 'cloudStatus';
+        statusDiv.className = 'fixed bottom-4 left-4 z-50';
+        
+        if (supabaseClient) {
+            statusDiv.innerHTML = `
+                <div class="bg-green-100 text-green-800 px-3 py-2 rounded-lg shadow flex items-center gap-2">
+                    <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span class="text-sm">Cloud Sync: Online</span>
+                </div>
+            `;
+        } else {
+            statusDiv.innerHTML = `
+                <div class="bg-yellow-100 text-yellow-800 px-3 py-2 rounded-lg shadow flex items-center gap-2">
+                    <div class="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                    <span class="text-sm">Cloud Sync: Offline (local only)</span>
+                </div>
+            `;
+        }
+        
+        document.body.appendChild(statusDiv);
+    }
+    
+    // Initialize cloud status
+    addCloudStatus();
 });
