@@ -131,6 +131,7 @@ hotel-map {
     max-height: 400px; /* ✅ Maximum height before scroll */
     overflow-y: auto; /* ✅ Scroll if content is too long */
     transition: min-height 0.3s ease; /* ✅ Smooth expansion */
+    padding: 1rem; /* ✅ Add padding */
 }
 
 /* ✅ Custom scrollbar for route steps */
@@ -215,5 +216,38 @@ hotel-map {
     #routeSteps {
         max-height: 300px; /* ✅ Smaller max height on mobile */
         font-size: 14px; /* ✅ Smaller text */
+        padding: 0.75rem; /* ✅ Smaller padding */
+    }
+    
+    /* ✅ Better spacing for mobile route list */
+    #routeSteps ol {
+        padding-left: 1.25rem;
+    }
+    
+    #routeSteps li {
+        margin-bottom: 0.5rem;
+        padding: 0.25rem 0;
+    }
+}
+
+/* ✅ Ensure markers are visible on all devices */
+@media (hover: none) and (pointer: coarse) {
+    /* Touch devices */
+    .marker {
+        width: 52px !important;
+        height: 52px !important;
+        font-size: 26px !important;
+    }
+}
+
+/* ✅ Print styles */
+@media print {
+    #hotelMapContainer {
+        height: 400px !important;
+    }
+    
+    .marker {
+        border-width: 2px !important;
+        background-color: white !important;
     }
 }
