@@ -1,4 +1,4 @@
-// admin/admin.js - Admin Panel with Supabase Cloud Sync
+// admin/admin.js - Admin Panel with Supabase Cloud Sync (FIXED IMAGE DISPLAY)
 
 let isLoggedIn = false;
 
@@ -40,85 +40,112 @@ document.addEventListener('DOMContentLoaded', async () => {
     let selectedIcon = '🛏️';
     let firstSelectedMarker = null;
 
-    // ✅ SUPABASE CONFIGURATION - YOUR CREDENTIALS
+    // ✅ SUPABASE CONFIGURATION
     const SUPABASE_URL = 'https://ejqrlglwogjpabmojfly.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqcXJsZ2x3b2dqcGFibW9qZmx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3MTU1NTcsImV4cCI6MjA4NTI5MTU1N30.OQeRNExX5PHG9BVmthuUFebVyyahg7tZWmmqCOLGBnE';
-    let supabaseClient = null;
     let hotelId = 'default_hotel';
-    
-    try {
-        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        console.log('✅ Admin: Supabase client initialized');
-    } catch (error) {
-        console.warn('⚠️ Admin: Supabase not available');
-    }
 
-    // ✅ CLOUD FUNCTIONS
-    async function saveToCloud() {
-        if (!supabaseClient) {
-            alert('❌ Supabase not configured. Data will be saved locally only.');
-            return { success: false };
-        }
-        
+    // ✅ DIRECT API FUNCTIONS
+    async function saveToCloudDirect() {
         try {
             const hotelData = JSON.parse(localStorage.getItem('hotelData') || '{}');
             
-            const { data, error } = await supabaseClient
-                .from('hotels')
-                .upsert({
+            const checkResponse = await fetch(
+                `${SUPABASE_URL}/rest/v1/hotels?hotel_id=eq.${hotelId}`,
+                {
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+            
+            let method = 'POST';
+            let url = `${SUPABASE_URL}/rest/v1/hotels`;
+            
+            if (checkResponse.ok) {
+                const checkData = await checkResponse.json();
+                if (checkData && checkData.length > 0) {
+                    method = 'PATCH';
+                    url = `${SUPABASE_URL}/rest/v1/hotels?hotel_id=eq.${hotelId}`;
+                }
+            }
+            
+            const response = await fetch(url, {
+                method: method,
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': method === 'PATCH' ? 'return=minimal' : 'return=representation'
+                },
+                body: JSON.stringify({
                     hotel_id: hotelId,
                     hotel_data: hotelData,
                     updated_at: new Date().toISOString()
-                }, {
-                    onConflict: 'hotel_id'
-                });
+                })
+            });
             
-            if (error) throw error;
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP error! status: ${response.status}, ${errorText}`);
+            }
             
             console.log('✅ Admin: Hotel data saved to cloud');
-            return { success: true, data };
+            return { success: true };
         } catch (error) {
             console.error('❌ Admin: Error saving to cloud:', error);
-            return { success: false, error };
+            return { success: false, error: error.message };
         }
     }
 
-    async function loadFromCloud() {
-        if (!supabaseClient) return { success: false, error: 'No Supabase client' };
-        
+    async function loadFromCloudDirect() {
         try {
-            const { data, error } = await supabaseClient
-                .from('hotels')
-                .select('hotel_data')
-                .eq('hotel_id', hotelId)
-                .single();
+            const response = await fetch(
+                `${SUPABASE_URL}/rest/v1/hotels?hotel_id=eq.${hotelId}&select=hotel_data`,
+                {
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
             
-            if (error && error.code !== 'PGRST116') throw error;
+            if (!response.ok) {
+                if (response.status === 404) {
+                    console.log('ℹ️ Admin: No hotel data found in cloud');
+                    return { success: true, data: null };
+                }
+                const errorText = await response.text();
+                throw new Error(`HTTP error! status: ${response.status}, ${errorText}`);
+            }
             
-            if (data) {
+            const data = await response.json();
+            
+            if (data && data.length > 0 && data[0].hotel_data) {
                 console.log('✅ Admin: Hotel data loaded from cloud');
-                return { success: true, data: data.hotel_data };
+                return { success: true, data: data[0].hotel_data };
             } else {
                 console.log('ℹ️ Admin: No hotel data found in cloud');
                 return { success: true, data: null };
             }
         } catch (error) {
             console.error('❌ Admin: Error loading from cloud:', error);
-            return { success: false, error };
+            return { success: false, error: error.message };
         }
     }
 
     // ✅ SAFE DATA INITIALIZATION
     let hotelData = JSON.parse(localStorage.getItem('hotelData') || '{}');
     
-    // Load from cloud on admin login
-    if (supabaseClient) {
-        const cloudResult = await loadFromCloud();
-        if (cloudResult.success && cloudResult.data) {
-            hotelData = cloudResult.data;
-            localStorage.setItem('hotelData', JSON.stringify(hotelData));
-            console.log('📥 Admin: Loaded data from cloud storage');
-        }
+    // Load from cloud on page load
+    const cloudResult = await loadFromCloudDirect();
+    if (cloudResult.success && cloudResult.data) {
+        hotelData = cloudResult.data;
+        localStorage.setItem('hotelData', JSON.stringify(hotelData));
+        console.log('📥 Admin: Loaded data from cloud storage');
     }
     
     console.log('Admin: Initial hotelData:', hotelData);
@@ -193,7 +220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         floorWarning.classList.toggle('hidden', floorNums.length > 1);
     }
 
-    // ✅ LOAD FLOOR
+    // ✅ FIXED: LOAD FLOOR WITH PROPER IMAGE DISPLAY
     function loadFloor(floorNum) {
         console.log('Loading floor:', floorNum);
         currentFloor = floorNum;
@@ -201,38 +228,90 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         console.log('Floor data for', floorNum, ':', {
             hasImage: !!floorData.floorPlanUrl,
-            imageLength: floorData.floorPlanUrl ? floorData.floorPlanUrl.length : 0
+            imageLength: floorData.floorPlanUrl ? floorData.floorPlanUrl.length : 0,
+            imagePrefix: floorData.floorPlanUrl ? floorData.floorPlanUrl.substring(0, 50) : 'none'
         });
 
-        // Clear and reload image
+        // ✅ FIXED: Proper image loading with error handling
         floorPlanImg.src = '';
         floorPlanImg.style.display = 'none';
+        floorPlanImg.onload = null;
+        floorPlanImg.onerror = null;
         
         if (floorData.floorPlanUrl && floorData.floorPlanUrl.length > 100) {
             console.log('Setting image source for floor', floorNum);
             
-            // Force a fresh load
-            const separator = floorData.floorPlanUrl.includes('?') ? '&' : '?';
-            const timestamp = Date.now();
-            const imageUrl = floorData.floorPlanUrl + separator + 't=' + timestamp;
+            // Create a new image to test loading first
+            const testImage = new Image();
             
-            floorPlanImg.src = imageUrl;
-            floorPlanImg.style.display = 'block';
-            
-            floorPlanImg.onload = function() {
-                console.log('Image loaded for floor', floorNum);
-                this.style.display = 'block';
+            testImage.onload = () => {
+                console.log('✅ Test image loaded successfully');
+                // Now set the actual image
+                floorPlanImg.src = floorData.floorPlanUrl;
+                floorPlanImg.style.display = 'block';
+                
+                // Apply proper styling for centering
+                floorPlanImg.style.position = 'absolute';
+                floorPlanImg.style.top = '50%';
+                floorPlanImg.style.left = '50%';
+                floorPlanImg.style.transform = 'translate(-50%, -50%)';
+                floorPlanImg.style.maxWidth = '100%';
+                floorPlanImg.style.maxHeight = '100%';
+                floorPlanImg.style.objectFit = 'contain';
+                
+                // Ensure container is properly styled
+                mapContainer.style.position = 'relative';
+                mapContainer.style.overflow = 'hidden';
+                mapContainer.style.display = 'flex';
+                mapContainer.style.alignItems = 'center';
+                mapContainer.style.justifyContent = 'center';
+                
+                console.log('✅ Floor plan image displayed');
             };
             
-            floorPlanImg.onerror = function() {
-                console.error('Failed to load image for floor', floorNum);
-                this.style.display = 'none';
-                this.src = '';
+            testImage.onerror = () => {
+                console.error('❌ Test image failed to load');
+                floorPlanImg.style.display = 'none';
+                floorPlanImg.src = '';
+                
+                // Try direct assignment as fallback
+                setTimeout(() => {
+                    if (floorData.floorPlanUrl) {
+                        floorPlanImg.src = floorData.floorPlanUrl;
+                        floorPlanImg.style.display = 'block';
+                    }
+                }, 100);
             };
+            
+            // Start loading the test image
+            testImage.src = floorData.floorPlanUrl;
+            
         } else {
             console.log('No valid image for floor', floorNum);
             floorPlanImg.style.display = 'none';
             floorPlanImg.src = '';
+            
+            // Show placeholder message
+            const placeholder = document.getElementById('floorPlanPlaceholder') || (() => {
+                const div = document.createElement('div');
+                div.id = 'floorPlanPlaceholder';
+                div.style.position = 'absolute';
+                div.style.top = '50%';
+                div.style.left = '50%';
+                div.style.transform = 'translate(-50%, -50%)';
+                div.style.color = '#666';
+                div.style.textAlign = 'center';
+                div.style.padding = '20px';
+                div.innerHTML = `
+                    <div style="font-size: 48px; margin-bottom: 10px;">🏢</div>
+                    <div style="font-weight: bold; margin-bottom: 5px;">No Floor Plan</div>
+                    <div style="font-size: 14px;">Upload an image using the button above</div>
+                `;
+                mapContainer.appendChild(div);
+                return div;
+            })();
+            
+            placeholder.style.display = 'block';
         }
 
         renderAll();
@@ -344,40 +423,97 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // === FILE UPLOAD ===
+    // === ✅ FIXED: FILE UPLOAD WITH BETTER FEEDBACK ===
     floorPlanUpload.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file && file.type.startsWith('image/')) {
+            if (file.size > 5 * 1024 * 1024) { // 5MB limit
+                alert('Image size too large! Please select an image under 5MB.');
+                e.target.value = '';
+                return;
+            }
+            
+            console.log('Uploading image for floor', currentFloor, 'File:', file.name, 'Size:', file.size);
+            
+            // Show loading indicator
+            const originalBtnText = floorPlanUpload.parentElement.querySelector('span')?.textContent || 'Upload Image';
+            floorPlanUpload.parentElement.innerHTML = `
+                <span class="text-green-600">⏳ Processing image...</span>
+                <input type="file" id="floorPlanUpload" accept="image/*" class="hidden" />
+            `;
+            
             const reader = new FileReader();
+            
+            reader.onloadstart = () => {
+                console.log('Starting to read file...');
+            };
+            
+            reader.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percent = Math.round((event.loaded / event.total) * 100);
+                    console.log(`Loading: ${percent}%`);
+                }
+            };
+            
             reader.onload = () => {
-                console.log('Uploading image for floor', currentFloor);
+                console.log('FileReader: Image loaded successfully');
                 const floorData = getFloorData(currentFloor);
                 floorData.floorPlanUrl = reader.result;
-                console.log('Image saved for floor', currentFloor, 'size:', reader.result.length);
+                console.log('Image saved for floor', currentFloor, 'size:', reader.result.length, 'type:', typeof reader.result);
                 
                 saveData();
-                loadFloor(currentFloor);
-                e.target.value = '';
+                
+                // Restore file input
+                floorPlanUpload.parentElement.innerHTML = `
+                    <span class="text-green-600">✅ Image uploaded! Loading...</span>
+                    <input type="file" id="floorPlanUpload" accept="image/*" 
+                        class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700" />
+                `;
+                
+                // Re-attach event listener
+                document.getElementById('floorPlanUpload').addEventListener('change', floorPlanUploadEventListener);
+                
+                // Reload floor with new image
+                setTimeout(() => {
+                    loadFloor(currentFloor);
+                    alert(`✅ Floor plan image uploaded successfully for ${floorData.name}!`);
+                }, 500);
             };
+            
             reader.onerror = (error) => {
                 console.error('FileReader error:', error);
-                alert('Error reading image file');
+                alert('Error reading image file. Please try again.');
+                
+                // Restore file input
+                floorPlanUpload.parentElement.innerHTML = `
+                    <span class="text-red-600">❌ Upload failed</span>
+                    <input type="file" id="floorPlanUpload" accept="image/*" 
+                        class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700" />
+                `;
+                
+                // Re-attach event listener
+                document.getElementById('floorPlanUpload').addEventListener('change', floorPlanUploadEventListener);
             };
+            
             reader.readAsDataURL(file);
         } else {
-            alert('Please select a valid image file (JPEG, PNG, etc.)');
+            alert('Please select a valid image file (JPEG, PNG, GIF, WebP, etc.)');
         }
     });
 
+    // Store event listener for reattachment
+    const floorPlanUploadEventListener = floorPlanUpload.addEventListener;
+
     // === CLEAR MAP ===
     clearMapBtn.addEventListener('click', () => {
-        if (confirm(`Clear entire map for ${getFloorData(currentFloor).name}? This cannot be undone.`)) {
+        if (confirm(`Clear entire map for ${getFloorData(currentFloor).name}? This will remove the floor plan image and all markers.`)) {
             const floorData = getFloorData(currentFloor);
             floorData.floorPlanUrl = '';
             floorData.markers = [];
             floorData.connections = [];
             saveData();
             loadFloor(currentFloor);
+            alert('✅ Floor plan cleared!');
         }
     });
 
@@ -433,6 +569,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             addMarkerForm.classList.add('hidden');
             markerNameInput.value = '';
             pendingMarker = null;
+            alert(`✅ Marker "${name}" added successfully!`);
+        } else {
+            alert('❌ Please enter a name for the marker and click on the map to place it.');
         }
     });
 
@@ -440,15 +579,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveDataBtn.addEventListener('click', async () => {
         saveData(); // Local save
         
-        if (supabaseClient) {
-            const result = await saveToCloud();
-            if (result.success) {
-                alert('✅ Saved locally and to cloud!');
-            } else {
-                alert('✅ Saved locally. ❌ Cloud save failed.');
-            }
+        const result = await saveToCloudDirect();
+        if (result.success) {
+            alert('✅ Saved locally and to cloud!');
         } else {
-            alert('✅ Saved locally (no cloud connection)');
+            alert(`✅ Saved locally. ❌ Cloud save failed: ${result.error}`);
         }
     });
 
@@ -456,8 +591,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // === CLICK HANDLER ===
     function handleMapClick(e) {
-        if (!floorPlanImg.src) {
+        if (!floorPlanImg.src || floorPlanImg.style.display === 'none') {
             console.log('No image loaded, cannot place markers');
+            alert('⚠️ Please upload a floor plan image first before adding markers.');
             return;
         }
         
@@ -480,20 +616,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.log('Adding marker at position:', x, y);
             pendingMarker = { x, y };
             addMarkerForm.classList.remove('hidden');
+            markerNameInput.focus();
         } else if (currentMode === 'delete' && closest) {
-            const idToRemove = closest.id;
-            floorData.markers = floorData.markers.filter(m => m.id !== idToRemove);
-            floorData.connections = floorData.connections.filter(([a, b]) => a !== idToRemove && b !== idToRemove);
-            saveData();
-            loadFloor(currentFloor);
+            if (confirm(`Delete marker "${closest.name}"?`)) {
+                const idToRemove = closest.id;
+                floorData.markers = floorData.markers.filter(m => m.id !== idToRemove);
+                floorData.connections = floorData.connections.filter(([a, b]) => a !== idToRemove && b !== idToRemove);
+                saveData();
+                loadFloor(currentFloor);
+                alert(`✅ Marker "${closest.name}" deleted.`);
+            }
         } else if ((currentMode === 'connect' || currentMode === 'disconnect') && closest) {
             if (!firstSelectedMarker) {
                 firstSelectedMarker = closest;
                 highlightMarker(closest.id, true);
+                alert(`📌 Selected "${closest.name}". Now click another marker to ${currentMode === 'connect' ? 'connect' : 'disconnect'}.`);
             } else {
                 if (firstSelectedMarker.id === closest.id) {
                     highlightMarker(firstSelectedMarker.id, false);
                     firstSelectedMarker = null;
+                    alert('Selection cleared.');
                     return;
                 }
 
@@ -504,8 +646,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 if (currentMode === 'connect' && connIndex === -1) {
                     floorData.connections.push([firstSelectedMarker.id, closest.id]);
+                    alert(`✅ Connected "${firstSelectedMarker.name}" to "${closest.name}"`);
                 } else if (currentMode === 'disconnect' && connIndex !== -1) {
                     floorData.connections.splice(connIndex, 1);
+                    alert(`✅ Disconnected "${firstSelectedMarker.name}" from "${closest.name}"`);
+                } else if (currentMode === 'connect') {
+                    alert('⚠️ These markers are already connected.');
+                } else {
+                    alert('⚠️ These markers are not connected.');
                 }
 
                 highlightMarker(firstSelectedMarker.id, false);
@@ -588,14 +736,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ✅ ADD CLOUD SAVE BUTTON
     function addCloudSaveButton() {
-        if (!supabaseClient) return;
-        
         // Create cloud save button container
         const cloudContainer = document.createElement('div');
         cloudContainer.className = 'mt-6 p-4 bg-blue-50 rounded-lg';
         
         cloudContainer.innerHTML = `
-            <h3 class="font-semibold text-blue-800 mb-2">Cloud Storage</h3>
+            <h3 class="font-semibold text-blue-800 mb-2">Cloud Storage (Supabase)</h3>
             <div class="flex flex-col gap-2">
                 <button id="cloudSaveBtn" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center justify-center gap-2">
                     <i data-feather="upload-cloud"></i>
@@ -605,9 +751,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <i data-feather="download-cloud"></i>
                     Load from Cloud
                 </button>
-                <p class="text-xs text-gray-600 mt-2">
-                    Hotel ID: <code class="bg-gray-100 px-2 py-1 rounded">${hotelId}</code>
-                </p>
+                <div class="text-xs text-gray-600 mt-2 p-2 bg-gray-100 rounded">
+                    <p class="font-medium">Connection Status:</p>
+                    <p>URL: ${SUPABASE_URL}</p>
+                    <p>Hotel ID: <code class="bg-white px-1">${hotelId}</code></p>
+                </div>
             </div>
         `;
         
@@ -616,18 +764,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Add event listeners
         document.getElementById('cloudSaveBtn').addEventListener('click', async () => {
-            const result = await saveToCloud();
+            const result = await saveToCloudDirect();
             if (result.success) {
                 alert('✅ Hotel data saved to cloud!');
-                feather.replace();
             } else {
-                alert('❌ Failed to save to cloud. Check console.');
+                alert(`❌ Failed to save to cloud: ${result.error}`);
             }
         });
         
         document.getElementById('cloudLoadBtn').addEventListener('click', async () => {
             if (confirm('Load from cloud? This will replace your current hotel data.')) {
-                const result = await loadFromCloud();
+                const result = await loadFromCloudDirect();
                 if (result.success && result.data) {
                     hotelData = result.data;
                     localStorage.setItem('hotelData', JSON.stringify(hotelData));
@@ -639,12 +786,48 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } else if (result.success && !result.data) {
                     alert('ℹ️ No hotel data found in cloud.');
                 } else {
-                    alert('❌ Failed to load from cloud. Check console.');
+                    alert(`❌ Failed to load from cloud: ${result.error}`);
                 }
             }
         });
         
         // Refresh feather icons
-        feather.replace();
+        if (typeof feather !== 'undefined') {
+            feather.replace();
+        }
     }
+    
+    // ✅ Add debug info panel
+    function addDebugPanel() {
+        const debugPanel = document.createElement('div');
+        debugPanel.id = 'debugPanel';
+        debugPanel.className = 'fixed bottom-4 right-4 bg-gray-900 text-white p-3 rounded-lg text-xs max-w-xs opacity-90 z-50 hidden';
+        debugPanel.innerHTML = `
+            <div class="font-bold mb-2">Debug Info</div>
+            <div id="debugContent" class="space-y-1"></div>
+        `;
+        document.body.appendChild(debugPanel);
+        
+        // Toggle debug panel with Ctrl+D
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'd') {
+                debugPanel.classList.toggle('hidden');
+            }
+        });
+        
+        // Update debug info periodically
+        setInterval(() => {
+            const floorData = getFloorData(currentFloor);
+            document.getElementById('debugContent').innerHTML = `
+                <div>Floor: ${currentFloor}</div>
+                <div>Markers: ${floorData.markers.length}</div>
+                <div>Connections: ${floorData.connections.length}</div>
+                <div>Image: ${floorData.floorPlanUrl ? '✅ Loaded' : '❌ None'}</div>
+                <div>Image Length: ${floorData.floorPlanUrl ? floorData.floorPlanUrl.length : 0}</div>
+            `;
+        }, 1000);
+    }
+    
+    // Initialize debug panel
+    addDebugPanel();
 });
