@@ -1,4 +1,4 @@
-// script.js - Guest Navigation with Supabase Cloud Sync (FIXED FOR QR CODES)
+// script.js - Complete with mobile fixes and auto-expanding route box
 
 document.addEventListener('DOMContentLoaded', async () => {
     feather.replace();
@@ -12,15 +12,79 @@ document.addEventListener('DOMContentLoaded', async () => {
     const qrcodeDiv = document.getElementById('qrcode');
     const guestFloorSelect = document.getElementById('guestFloorSelect');
 
-    // ✅ SUPABASE CONFIGURATION
+    // ✅ SUPABASE CONFIGURATION - YOUR CREDENTIALS
     const SUPABASE_URL = 'https://ejqrlglwogjpabmojfly.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqcXJsZ2x3b2dqcGFibW9qZmx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3MTU1NTcsImV4cCI6MjA4NTI5MTU1N30.OQeRNExX5PHG9BVmthuUFebVyyahg7tZWmmqCOLGBnE';
+    let supabaseClient = null;
     let hotelId = 'default_hotel';
+    
+    try {
+        // Initialize Supabase with correct options
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+            auth: {
+                persistSession: false
+            }
+        });
+        console.log('✅ Supabase client initialized');
+    } catch (error) {
+        console.warn('⚠️ Supabase not available, using localStorage only', error);
+    }
 
-    // ✅ DIRECT API FUNCTIONS
-    async function loadFromCloudDirect() {
-        console.log('🔄 Loading from cloud for hotel:', hotelId);
+    // ✅ CLOUD FUNCTIONS
+    async function saveToCloud(hotelData) {
+        if (!supabaseClient) return { success: false, error: 'No Supabase client' };
         
+        try {
+            const { data, error } = await supabaseClient
+                .from('hotels')
+                .upsert({
+                    hotel_id: hotelId,
+                    hotel_data: hotelData,
+                    updated_at: new Date().toISOString()
+                }, {
+                    onConflict: 'hotel_id'
+                });
+            
+            if (error) throw error;
+            
+            console.log('✅ Hotel data saved to cloud');
+            return { success: true, data };
+        } catch (error) {
+            console.error('❌ Error saving to cloud:', error);
+            return { success: false, error };
+        }
+    }
+
+    async function loadFromCloud() {
+        if (!supabaseClient) return { success: false, error: 'No Supabase client' };
+        
+        try {
+            const { data, error } = await supabaseClient
+                .from('hotels')
+                .select('hotel_data')
+                .eq('hotel_id', hotelId)
+                .maybeSingle();
+            
+            if (error) {
+                console.error('Supabase error:', error);
+                throw error;
+            }
+            
+            if (data && data.hotel_data) {
+                console.log('✅ Hotel data loaded from cloud');
+                return { success: true, data: data.hotel_data };
+            } else {
+                console.log('ℹ️ No hotel data found in cloud');
+                return { success: true, data: null };
+            }
+        } catch (error) {
+            console.error('❌ Error loading from cloud:', error);
+            return { success: false, error };
+        }
+    }
+
+    // ✅ SIMPLE DIRECT FETCH FUNCTION (Fallback)
+    async function fetchFromCloudDirect() {
         try {
             const response = await fetch(
                 `${SUPABASE_URL}/rest/v1/hotels?hotel_id=eq.${hotelId}&select=hotel_data`,
@@ -33,118 +97,169 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             );
             
-            console.log('Cloud response status:', response.status);
-            
             if (!response.ok) {
-                if (response.status === 404) {
-                    console.log('ℹ️ No hotel data found in cloud');
-                    return { success: true, data: null };
-                }
-                const errorText = await response.text();
-                console.error('Cloud error response:', errorText);
-                throw new Error(`HTTP error! status: ${response.status}, ${errorText}`);
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
             
             const data = await response.json();
-            console.log('Cloud data received:', data);
             
             if (data && data.length > 0 && data[0].hotel_data) {
-                console.log('✅ Hotel data loaded from cloud');
-                console.log('Floors in data:', Object.keys(data[0].hotel_data.floors || {}));
+                console.log('✅ Direct fetch: Hotel data loaded from cloud');
                 return { success: true, data: data[0].hotel_data };
             } else {
-                console.log('ℹ️ No hotel data found in cloud (empty array)');
+                console.log('ℹ️ Direct fetch: No hotel data found in cloud');
                 return { success: true, data: null };
             }
         } catch (error) {
-            console.error('❌ Error loading from cloud:', error);
-            return { success: false, error: error.message };
+            console.error('❌ Direct fetch error:', error);
+            return { success: false, error };
         }
     }
 
-    // ✅ URL PARAMETER HANDLING
-    function getUrlParameters() {
+    function generateShareableUrl(from, to) {
+        const baseUrl = 'https://knight-archcode.github.io/mysite/';
+        const params = new URLSearchParams({
+            hotel: hotelId,
+            from: from || '',
+            to: to || '',
+            source: 'qr_code',
+            t: Date.now()
+        });
+        
+        return `${baseUrl}?${params.toString()}`;
+    }
+
+    function loadFromUrl() {
         const params = new URLSearchParams(window.location.search);
         const urlHotelId = params.get('hotel');
         const fromParam = params.get('from');
         const toParam = params.get('to');
         
-        console.log('📊 URL Parameters:', { urlHotelId, fromParam, toParam });
-        
         if (urlHotelId) {
             hotelId = urlHotelId;
-            console.log('📥 Setting hotel ID from URL:', hotelId);
+            console.log('📥 Loading hotel:', hotelId);
         }
         
-        return { 
-            from: fromParam, 
-            to: toParam,
-            hasHotelId: !!urlHotelId
-        };
+        return { from: fromParam, to: toParam };
     }
 
-    // ✅ LOAD HOTEL DATA WITH PRIORITY
-    async function loadHotelData() {
-        const urlParams = getUrlParameters();
+    // ✅ FUNCTION: Auto-expand route box
+    function updateRouteBoxHeight() {
+        if (!routeSteps) return;
         
-        // Always try to load from cloud when accessed via QR code
-        // QR codes have hotel parameter, so we should force cloud load
-        if (urlParams.hasHotelId) {
-            console.log('🔗 QR Code detected, forcing cloud load...');
-            const cloudResult = await loadFromCloudDirect();
+        // Reset to minimum height first
+        routeSteps.style.minHeight = '120px';
+        
+        // Calculate content height
+        const contentHeight = routeSteps.scrollHeight;
+        
+        // Set new minimum height (with some padding)
+        const newHeight = Math.min(Math.max(contentHeight, 120), 400); // Min 120px, Max 400px
+        routeSteps.style.minHeight = `${newHeight}px`;
+        
+        // Add smooth transition
+        routeSteps.style.transition = 'min-height 0.3s ease';
+        
+        console.log('Route box height updated:', newHeight, 'px');
+    }
+
+    // ✅ FUNCTION: Adjust markers for mobile
+    function adjustMarkersForMobile() {
+        if (!window.matchMedia("(max-width: 768px)").matches) {
+            return; // Only adjust on mobile
+        }
+        
+        const markers = document.querySelectorAll('.marker');
+        const containerWidth = hotelMapContainer.offsetWidth;
+        const containerHeight = hotelMapContainer.offsetHeight;
+        
+        markers.forEach(marker => {
+            const currentLeft = parseFloat(marker.style.left) || 0;
+            const currentTop = parseFloat(marker.style.top) || 0;
             
-            if (cloudResult.success && cloudResult.data) {
-                console.log('✅ QR Code: Loaded hotel data from cloud');
-                localStorage.setItem('hotelData', JSON.stringify(cloudResult.data));
-                return cloudResult.data;
-            } else {
-                console.log('⚠️ QR Code: Could not load from cloud, checking localStorage');
+            // Scale marker positions if needed
+            if (currentLeft > containerWidth || currentTop > containerHeight) {
+                const scaleX = containerWidth / 1000;
+                const scaleY = containerHeight / 800;
+                
+                marker.style.left = `${currentLeft * Math.min(scaleX, scaleY)}px`;
+                marker.style.top = `${currentTop * Math.min(scaleX, scaleY)}px`;
             }
-        }
-        
-        // Fallback: Check localStorage
-        let hotelData = JSON.parse(localStorage.getItem('hotelData') || '{}');
-        
-        // If still empty, try cloud one more time
-        if (Object.keys(hotelData).length === 0 || !hotelData.floors) {
-            console.log('🔄 No local data, trying cloud...');
-            const cloudResult = await loadFromCloudDirect();
-            if (cloudResult.success && cloudResult.data) {
-                hotelData = cloudResult.data;
-                localStorage.setItem('hotelData', JSON.stringify(hotelData));
-                console.log('✅ Loaded from cloud as fallback');
-            }
-        }
-        
-        return hotelData;
+        });
     }
 
-    // ✅ INITIALIZE: Load data first, then setup UI
-    let hotelData = await loadHotelData();
+    // ✅ FUNCTION: Debug marker positions
+    function debugMarkerPositions() {
+        const markers = document.querySelectorAll('.marker');
+        console.log(`Found ${markers.length} markers in DOM`);
+        
+        markers.forEach((marker, index) => {
+            const rect = marker.getBoundingClientRect();
+            console.log(`Marker ${index}:`, {
+                name: marker.getAttribute('data-marker-name'),
+                left: marker.style.left,
+                top: marker.style.top,
+                computedLeft: rect.left,
+                computedTop: rect.top,
+                width: rect.width,
+                height: rect.height,
+                visible: rect.width > 0 && rect.height > 0
+            });
+        });
+        
+        const containerRect = hotelMapContainer.getBoundingClientRect();
+        console.log('Container:', {
+            width: containerRect.width,
+            height: containerRect.height,
+            left: containerRect.left,
+            top: containerRect.top
+        });
+    }
+
+    // ✅ INITIALIZE: Check URL params first, then load data
+    const urlParams = loadFromUrl();
+    
+    // Load data with priority: 1. localStorage, 2. Cloud, 3. URL
+    let hotelData = JSON.parse(localStorage.getItem('hotelData') || '{}');
+    
+    // If no data in localStorage, try cloud (using direct fetch as fallback)
+    if (Object.keys(hotelData).length === 0) {
+        let cloudResult;
+        
+        if (supabaseClient) {
+            cloudResult = await loadFromCloud();
+        }
+        
+        if (!cloudResult || !cloudResult.success) {
+            cloudResult = await fetchFromCloudDirect();
+        }
+        
+        if (cloudResult.success && cloudResult.data) {
+            hotelData = cloudResult.data;
+            localStorage.setItem('hotelData', JSON.stringify(hotelData));
+            console.log('📥 Loaded from cloud storage');
+        }
+    }
     
     if (!hotelData.floors) hotelData.floors = {};
-    console.log('📋 Final hotel data loaded:', {
-        floors: Object.keys(hotelData.floors),
-        hasFloors: Object.keys(hotelData.floors).length > 0
-    });
+    console.log('Guest: Loaded hotelData', Object.keys(hotelData.floors || {}));
 
     // Flatten all markers with floor info
     let allMarkers = [];
     Object.keys(hotelData.floors).forEach(floorNum => {
         const floor = hotelData.floors[floorNum];
         if (floor && floor.markers) {
-            console.log(`📌 Floor ${floorNum} has ${floor.markers.length} markers`);
             floor.markers.forEach(m => {
                 allMarkers.push({ ...m, floor: floorNum });
             });
         }
     });
 
-    console.log('👣 Total markers found:', allMarkers.length);
+    console.log('Guest: Total markers found:', allMarkers.length);
 
     const floorNumbers = Object.keys(hotelData.floors).sort((a, b) => parseInt(a) - parseInt(b));
     let currentFloor = floorNumbers[0] || '1';
-    console.log('🏢 Current floor:', currentFloor, 'Available floors:', floorNumbers);
+    console.log('Guest: Current floor:', currentFloor, 'Available floors:', floorNumbers);
     
     // Store current path for highlighting
     let currentPath = [];
@@ -163,28 +278,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             guestFloorSelect.appendChild(opt);
         });
         guestFloorSelect.value = currentFloor;
-        console.log('📋 Floor selector populated with', floorNumbers.length, 'floors');
     }
 
     // Load floor plan
     function loadFloor(floorNum) {
-        console.log('📥 Loading floor', floorNum);
+        console.log('Guest: Loading floor', floorNum);
         currentFloor = floorNum;
         const floorData = hotelData.floors[floorNum] || {};
         const floorPlanUrl = floorData.floorPlanUrl || '';
         
-        console.log('🖼️ Floor image data for', floorNum, 'exists:', !!floorPlanUrl, 'length:', floorPlanUrl ? floorPlanUrl.length : 0);
+        console.log('Guest: Floor image data for', floorNum, 'exists:', !!floorPlanUrl, 'length:', floorPlanUrl.length);
 
         // Clear existing image
         floorPlanImg.src = '';
         floorPlanImg.style.display = 'none';
 
         if (floorPlanUrl && floorPlanUrl.length > 100) {
-            console.log('🎨 Setting image for floor', floorNum);
+            console.log('Guest: Setting image for floor', floorNum);
             
             const testImage = new Image();
             testImage.onload = function() {
-                console.log('✅ Image loaded for floor', floorNum);
+                console.log('Guest: Image loaded for floor', floorNum);
                 
                 floorPlanImg.src = floorPlanUrl;
                 floorPlanImg.style.display = 'block';
@@ -201,87 +315,52 @@ document.addEventListener('DOMContentLoaded', async () => {
                 hotelMapContainer.style.display = 'flex';
                 hotelMapContainer.style.alignItems = 'center';
                 hotelMapContainer.style.justifyContent = 'center';
-                
-                // Render markers after image loads
-                setTimeout(renderMap, 100);
             };
             
             testImage.onerror = function() {
-                console.error('❌ Failed to load image for floor', floorNum);
+                console.error('Guest: Failed to load image for floor', floorNum);
                 floorPlanImg.style.display = 'none';
                 floorPlanImg.src = '';
-                renderMap(); // Still render markers even without image
             };
             
             testImage.src = floorPlanUrl;
         } else {
-            console.log('⚠️ No image for floor', floorNum);
+            console.log('Guest: No image for floor', floorNum);
             floorPlanImg.src = '';
             floorPlanImg.style.display = 'none';
-            renderMap(); // Render markers even without image
         }
-        
+
+        renderMap();
         // Re-highlight path when switching floors
         highlightCurrentPathOnFloor();
     }
 
     // Initialize UI
-    const urlParams = getUrlParameters();
-    
     if (floorNumbers.length > 0) {
         populateFloorSelect();
         loadFloor(currentFloor);
         updateLocationDropdowns();
         
-        // ✅ Auto-set from URL parameters if provided (from QR code)
+        // ✅ Auto-set from URL parameters if provided
         if (urlParams.from && urlParams.to) {
-            console.log('🔗 Auto-setting route from QR code:', urlParams.from, '→', urlParams.to);
-            
             setTimeout(() => {
-                if (fromSelect && fromSelect.options.length > 0) {
-                    fromSelect.value = urlParams.from;
-                    console.log('✅ Set FROM:', urlParams.from);
-                }
-                if (toSelect && toSelect.options.length > 0) {
-                    toSelect.value = urlParams.to;
-                    console.log('✅ Set TO:', urlParams.to);
-                }
+                if (fromSelect) fromSelect.value = urlParams.from;
+                if (toSelect) toSelect.value = urlParams.to;
                 
                 // Auto-find route after UI loads
                 setTimeout(() => {
-                    if (findBtn) {
-                        console.log('🚀 Auto-finding route...');
-                        findBtn.click();
-                    }
-                }, 1500);
-            }, 1000);
+                    if (findBtn) findBtn.click();
+                }, 1000);
+            }, 500);
         }
     } else {
-        routeSteps.innerHTML = `
-            <div class="text-center p-4">
-                <div class="text-4xl mb-4">🏢</div>
-                <p class="text-gray-500 mb-2">No floor plans configured yet.</p>
-                <p class="text-sm text-gray-400">Please use the admin panel to set up your hotel navigation.</p>
-                <a href="admin/index.html" class="inline-block mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
-                    Go to Admin Panel
-                </a>
-            </div>
-        `;
-        
-        // Show QR code warning
-        qrcodeDiv.innerHTML = `
-            <div class="text-center p-4 border border-yellow-200 rounded-lg bg-yellow-50">
-                <div class="text-yellow-600 text-3xl mb-2">⚠️</div>
-                <p class="text-yellow-800 font-medium mb-1">Hotel Data Not Found</p>
-                <p class="text-yellow-700 text-sm">This QR code links to hotel: <code class="bg-yellow-100 px-2 py-1 rounded">${hotelId}</code></p>
-                <p class="text-yellow-700 text-sm mt-2">Make sure the hotel has been configured in the admin panel.</p>
-            </div>
-        `;
+        routeSteps.innerHTML = '<p class="text-gray-500">No floor plans configured. Please use the admin panel.</p>';
+        updateRouteBoxHeight();
     }
 
     // Floor switch handler
     guestFloorSelect?.addEventListener('change', () => {
-        console.log('🔄 Changing floor to', guestFloorSelect.value);
+        console.log('Guest: Changing floor to', guestFloorSelect.value);
         loadFloor(guestFloorSelect.value);
     });
 
@@ -300,7 +379,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (targetFloor && targetFloor !== currentFloor) {
-            console.log('🚪 Auto-switching to floor', targetFloor);
+            console.log('Guest: Auto-switching to floor', targetFloor);
             currentFloor = targetFloor;
             if (guestFloorSelect) guestFloorSelect.value = currentFloor;
             loadFloor(currentFloor);
@@ -313,65 +392,56 @@ document.addEventListener('DOMContentLoaded', async () => {
     findBtn?.addEventListener('click', findRoute);
 
     function renderMap() {
-        console.log('🎨 Rendering map for floor', currentFloor);
-        console.log(`📍 Markers on floor ${currentFloor}:`, allMarkers.filter(m => m.floor === currentFloor).length);
-        
-        // Clear all elements except the path segments
+        console.log('Guest: Rendering map for floor', currentFloor);
+        // Clear all elements except the path segments (we'll handle those separately)
         document.querySelectorAll('.marker, .connection').forEach(el => el.remove());
 
         const floorMarkers = allMarkers.filter(m => m.floor === currentFloor);
+        console.log('Guest: Markers on this floor:', floorMarkers.length);
         
-        if (floorMarkers.length === 0) {
-            console.log('⚠️ No markers to render on this floor');
-            // Show message if no markers
-            const noMarkersMsg = document.getElementById('noMarkersMsg') || (() => {
-                const msg = document.createElement('div');
-                msg.id = 'noMarkersMsg';
-                msg.style.position = 'absolute';
-                msg.style.top = '50%';
-                msg.style.left = '50%';
-                msg.style.transform = 'translate(-50%, -50%)';
-                msg.style.color = '#666';
-                msg.style.textAlign = 'center';
-                msg.style.padding = '20px';
-                msg.style.zIndex = '1';
-                msg.innerHTML = `
-                    <div style="font-size: 32px; margin-bottom: 10px;">📍</div>
-                    <div style="font-weight: bold; margin-bottom: 5px;">No Markers</div>
-                    <div style="font-size: 14px;">No locations marked on this floor</div>
-                `;
-                hotelMapContainer.appendChild(msg);
-                return msg;
-            })();
-            noMarkersMsg.style.display = 'block';
-        } else {
-            // Hide no markers message
-            const noMarkersMsg = document.getElementById('noMarkersMsg');
-            if (noMarkersMsg) noMarkersMsg.style.display = 'none';
+        floorMarkers.forEach(marker => {
+            const el = document.createElement('div');
+            el.className = 'marker';
+            el.textContent = marker.icon;
+            el.title = marker.name;
             
-            // Render markers
-            floorMarkers.forEach(marker => {
-                const el = document.createElement('div');
-                el.className = 'marker';
-                el.textContent = marker.icon;
-                el.title = `${marker.name} (Floor ${marker.floor})`;
-                el.style.left = `${marker.x}px`;
-                el.style.top = `${marker.y}px`;
-                el.style.zIndex = '10';
-                hotelMapContainer.appendChild(el);
-                console.log(`📍 Added marker: ${marker.name} at (${marker.x}, ${marker.y})`);
-            });
+            // ✅ FIX: Ensure markers are positioned correctly
+            el.style.left = `${marker.x}px`;
+            el.style.top = `${marker.y}px`;
+            el.style.position = 'absolute';
+            el.style.zIndex = '10';
+            
+            // ✅ Add data attributes for debugging
+            el.setAttribute('data-marker-name', marker.name);
+            el.setAttribute('data-marker-id', marker.id);
+            
+            hotelMapContainer.appendChild(el);
+            
+            // ✅ Debug log for mobile
+            console.log(`Marker placed: ${marker.name} at (${marker.x}, ${marker.y})`);
+        });
 
-            // Render connections
-            const floorConnections = (hotelData.floors[currentFloor]?.connections || []);
-            floorConnections.forEach(([id1, id2]) => {
-                const m1 = allMarkers.find(m => m.id === id1);
-                const m2 = allMarkers.find(m => m.id === id2);
-                if (m1 && m2 && m1.floor === currentFloor && m2.floor === currentFloor) {
-                    drawConnection(m1.x, m1.y, m2.x, m2.y, 'connection');
-                }
-            });
-        }
+        const floorConnections = (hotelData.floors[currentFloor]?.connections || []);
+        floorConnections.forEach(([id1, id2]) => {
+            const m1 = allMarkers.find(m => m.id === id1);
+            const m2 = allMarkers.find(m => m.id === id2);
+            if (m1 && m2 && m1.floor === currentFloor && m2.floor === currentFloor) {
+                drawConnection(m1.x, m1.y, m2.x, m2.y, 'connection');
+            }
+        });
+        
+        // ✅ Adjust markers for mobile
+        setTimeout(adjustMarkersForMobile, 50);
+        
+        // ✅ Debug marker positions
+        setTimeout(debugMarkerPositions, 100);
+        
+        // ✅ Force a reflow to ensure markers are visible
+        setTimeout(() => {
+            hotelMapContainer.style.display = 'none';
+            hotelMapContainer.offsetHeight; // Trigger reflow
+            hotelMapContainer.style.display = 'flex';
+        }, 10);
     }
 
     function drawConnection(x1, y1, x2, y2, className) {
@@ -474,18 +544,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (type === 'start') {
                         el.style.border = '3px solid #10b981';
                         el.style.borderRadius = '50%';
-                        el.title = `START: ${marker.name}`;
+                        el.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
                     } else if (type === 'end') {
                         el.style.border = '3px solid #3b82f6';
                         el.style.borderRadius = '50%';
-                        el.title = `END: ${marker.name}`;
+                        el.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
                     }
                 } else {
                     el.style.transform = 'translate(-50%, -50%)';
                     el.style.zIndex = '10';
-                    el.style.boxShadow = 'none';
-                    el.style.border = 'none';
-                    el.title = `${marker.name} (Floor ${marker.floor})`;
+                    el.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
+                    el.style.border = '3px solid #3b82f6';
+                    el.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
                 }
             }
         });
@@ -516,9 +586,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const floorName = floorData?.name || `Floor ${m.floor}`;
             return { name: m.name, icon: m.icon, floor: m.floor, floorName };
         });
-        
-        console.log('📋 Updating dropdowns with', locations.length, 'locations');
-        
         ['fromLocation', 'toLocation'].forEach(id => {
             const select = document.getElementById(id);
             if (!select) return;
@@ -538,15 +605,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // === PATHFINDING & DIRECTIONS ===
     function findShortestPath(startName, endName) {
-        console.log('🔄 Finding path from', startName, 'to', endName);
-        
         const start = allMarkers.find(m => m.name === startName);
         const end = allMarkers.find(m => m.name === endName);
-        
-        if (!start || !end) {
-            console.log('❌ Start or end marker not found');
-            return null;
-        }
+        if (!start || !end) return null;
 
         const graph = {};
         allMarkers.forEach(m => { graph[m.id] = []; });
@@ -605,15 +666,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             path.unshift(u);
             u = prev[u];
         }
-        
-        if (dist[end.id] === Infinity) {
-            console.log('❌ No path found (distance is Infinity)');
-            return null;
-        }
-        
-        const result = path.map(id => allMarkers.find(m => m.id === id));
-        console.log('✅ Path found with', result.length, 'steps');
-        return result;
+        if (dist[end.id] === Infinity) return null;
+        return path.map(id => allMarkers.find(m => m.id === id));
     }
 
     function generateDirections(path) {
@@ -621,28 +675,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const instructions = [];
         const startFloorName = getFloorName(path[0].floor);
-        instructions.push(`Start at ${path[0].icon} ${path[0].name} on ${startFloorName}.`);
+        instructions.push(`<strong>Start at ${path[0].icon} ${path[0].name} on ${startFloorName}.</strong>`);
 
         for (let i = 1; i < path.length; i++) {
             const current = path[i];
             const prev = path[i - 1];
 
             if (prev.floor !== current.floor) {
-                instructions.push(`Take the elevator to ${getFloorName(current.floor)}.`);
+                instructions.push(`<span class="text-orange-600">Take the elevator to ${getFloorName(current.floor)}.</span>`);
                 if (i === path.length - 1) {
-                    instructions.push(`Arrive at ${current.icon} ${current.name}.`);
+                    instructions.push(`<strong class="text-green-600">Arrive at ${current.icon} ${current.name}.</strong>`);
                 }
                 continue;
             }
 
             if (i === path.length - 1) {
-                instructions.push(`Arrive at ${current.icon} ${current.name}.`);
+                instructions.push(`<strong class="text-green-600">Arrive at ${current.icon} ${current.name}.</strong>`);
                 break;
             }
 
             const next = path[i + 1];
             if (next.floor !== current.floor) {
-                instructions.push(`Go to the elevator.`);
+                instructions.push(`<span class="text-orange-600">Go to the elevator.</span>`);
                 continue;
             }
 
@@ -664,9 +718,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const uy2 = dy2 / len2;
 
             const cross = ux1 * uy2 - uy1 * ux2;
-            let action = "go straight";
+            let action = "Go straight";
             if (Math.abs(cross) > 0.1) {
-                action = cross > 0 ? "turn left" : "turn right";
+                action = cross > 0 ? "Turn left" : "Turn right";
             }
 
             instructions.push(`${action} toward ${current.icon} ${current.name}.`);
@@ -684,21 +738,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         const from = fromSelect?.value;
         const to = toSelect?.value;
         if (!from || !to) {
-            routeSteps.innerHTML = '<p class="text-gray-400">Select both start and destination</p>';
-            qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm">Route QR appears here</p>';
+            routeSteps.innerHTML = '<p class="text-gray-400 text-center py-8">Select both start and destination locations</p>';
+            qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">Route QR appears here</p>';
             
+            // Clear any existing highlighting
             currentPath = [];
             highlightCurrentPathOnFloor();
+            
+            // Update route box height
+            setTimeout(updateRouteBoxHeight, 10);
             return;
         }
 
         const path = findShortestPath(from, to);
         if (!path || path.length === 0) {
-            routeSteps.innerHTML = '<p class="text-red-600">No path found between these locations.</p>';
-            qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm">No route available</p>';
+            routeSteps.innerHTML = '<p class="text-red-600 text-center py-8">No path found between these locations.</p>';
+            qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">No route available</p>';
             
+            // Clear any existing highlighting
             currentPath = [];
             highlightCurrentPathOnFloor();
+            
+            // Update route box height
+            setTimeout(updateRouteBoxHeight, 10);
             return;
         }
 
@@ -706,9 +768,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentPath = path;
         
         const directions = generateDirections(path);
-        let stepsHtml = '<ol class="list-decimal pl-5 space-y-1">';
-        directions.forEach(step => {
-            stepsHtml += `<li>${step}</li>`;
+        let stepsHtml = '<ol class="list-decimal pl-5 space-y-3">'; // ✅ Added more spacing
+        directions.forEach((step, index) => {
+            stepsHtml += `<li class="py-1 ${index === 0 || index === directions.length - 1 ? 'font-semibold' : ''}">${step}</li>`;
         });
         stepsHtml += '</ol>';
         routeSteps.innerHTML = stepsHtml;
@@ -716,16 +778,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Highlight the path on the map
         highlightCurrentPathOnFloor();
 
-        // ✅ QR Code generation
-        const baseUrl = 'https://knight-archcode.github.io/mysite/';
-        const params = new URLSearchParams({
-            hotel: hotelId,
-            from: from,
-            to: to,
-            source: 'qr_code',
-            t: Date.now()
-        });
-        const url = `${baseUrl}?${params.toString()}`;
+        // ✅ Update route box height after content is rendered
+        setTimeout(updateRouteBoxHeight, 50);
+
+        // ✅ QR Code generation with Cloud URL
+        const url = generateShareableUrl(from, to);
         
         qrcodeDiv.innerHTML = '';
         
@@ -742,12 +799,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             container.innerHTML = `
                 ${svgTag}
                 <div class="mt-3 text-center">
-                    <p class="text-xs text-gray-600 mb-1">Scan to share this route</p>
+                    <p class="text-xs text-gray-600 mb-1">Scan to view route</p>
                     <p class="text-xs text-green-600 font-medium">
-                        ✅ Includes hotel: ${hotelId}
+                        ✅ Includes hotel data
                     </p>
-                    <p class="text-xs text-blue-600 mt-1 break-all">
-                        ${from} → ${to}
+                    <p class="text-xs text-blue-600 mt-1">
+                        ${url.split('?')[0]}
                     </p>
                 </div>
             `;
@@ -765,90 +822,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
-    // ✅ Add status panel
-    function addStatusPanel() {
-        const statusPanel = document.createElement('div');
-        statusPanel.id = 'statusPanel';
-        statusPanel.className = 'fixed top-4 right-4 bg-blue-600 text-white p-3 rounded-lg text-xs max-w-xs opacity-90 z-50 shadow-lg';
-        statusPanel.innerHTML = `
-            <div class="font-bold mb-1 flex items-center gap-2">
-                <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                Hotel Navigator
+    // ✅ Add cloud sync status indicator
+    function addCloudStatus() {
+        const statusDiv = document.createElement('div');
+        statusDiv.id = 'cloudStatus';
+        statusDiv.className = 'fixed bottom-4 left-4 z-50';
+        
+        statusDiv.innerHTML = `
+            <div class="bg-green-100 text-green-800 px-3 py-2 rounded-lg shadow flex items-center gap-2">
+                <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span class="text-sm">Cloud Sync: Ready</span>
             </div>
-            <div id="statusContent" class="space-y-1"></div>
         `;
-        document.body.appendChild(statusPanel);
         
-        // Update status info
-        setInterval(() => {
-            const floorData = hotelData.floors[currentFloor];
-            document.getElementById('statusContent').innerHTML = `
-                <div>Hotel: <span class="font-semibold">${hotelId}</span></div>
-                <div>Floor: ${currentFloor}</div>
-                <div>Locations: ${allMarkers.length}</div>
-                <div class="text-green-300">✓ Cloud Connected</div>
-            `;
-        }, 2000);
-        
-        // Auto-hide after 10 seconds
-        setTimeout(() => {
-            statusPanel.style.opacity = '0.5';
-            statusPanel.style.transition = 'opacity 0.5s';
-            
-            // Show on hover
-            statusPanel.addEventListener('mouseenter', () => {
-                statusPanel.style.opacity = '0.9';
-            });
-            statusPanel.addEventListener('mouseleave', () => {
-                statusPanel.style.opacity = '0.5';
-            });
-        }, 10000);
+        document.body.appendChild(statusDiv);
     }
     
-    // Initialize status panel
-    addStatusPanel();
-    
-    // ✅ Add refresh button for testing
-    function addRefreshButton() {
-        const refreshBtn = document.createElement('button');
-        refreshBtn.id = 'refreshDataBtn';
-        refreshBtn.className = 'fixed bottom-4 right-4 bg-purple-600 text-white px-3 py-2 rounded-lg text-sm shadow-lg z-50';
-        refreshBtn.innerHTML = '🔄 Refresh Hotel Data';
-        refreshBtn.addEventListener('click', async () => {
-            refreshBtn.innerHTML = '⏳ Loading...';
-            refreshBtn.disabled = true;
-            
-            const result = await loadFromCloudDirect();
-            if (result.success && result.data) {
-                hotelData = result.data;
-                localStorage.setItem('hotelData', JSON.stringify(hotelData));
-                
-                // Reset markers
-                allMarkers = [];
-                Object.keys(hotelData.floors).forEach(floorNum => {
-                    const floor = hotelData.floors[floorNum];
-                    if (floor && floor.markers) {
-                        floor.markers.forEach(m => {
-                            allMarkers.push({ ...m, floor: floorNum });
-                        });
-                    }
-                });
-                
-                updateLocationDropdowns();
-                loadFloor(currentFloor);
-                
-                alert('✅ Hotel data refreshed from cloud!');
-            } else {
-                alert('❌ Failed to refresh from cloud');
-            }
-            
-            refreshBtn.innerHTML = '🔄 Refresh Hotel Data';
-            refreshBtn.disabled = false;
-        });
-        
-        document.body.appendChild(refreshBtn);
-    }
-    
-    // Add refresh button
-    addRefreshButton();
+    // Initialize cloud status
+    addCloudStatus();
 });
