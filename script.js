@@ -207,53 +207,72 @@ document.addEventListener('DOMContentLoaded', async () => {
         guestFloorSelect.value = currentFloor;
     }
 
-    // Load floor plan
-    function loadFloor(floorNum) {
-        console.log('Guest: Loading floor', floorNum);
-        currentFloor = floorNum;
-        const floorData = hotelData.floors[floorNum] || {};
-        const floorPlanUrl = floorData.floorPlanUrl || '';
+// Load floor plan
+function loadFloor(floorNum) {
+    console.log('Guest: Loading floor', floorNum);
+    currentFloor = floorNum;
+    const floorData = hotelData.floors[floorNum] || {};
+    const floorPlanUrl = floorData.floorPlanUrl || '';
+    
+    console.log('Guest: Floor image data for', floorNum, 'type:', floorData.imageType || 'unknown');
 
+    // Clear existing image
+    floorPlanImg.src = '';
+    floorPlanImg.style.display = 'none';
+
+    if (floorPlanUrl) {
+        console.log('Guest: Setting image for floor', floorNum);
+        
+        const testImage = new Image();
+        testImage.onload = function() {
+            console.log('Guest: Image loaded for floor', floorNum);
+            
+            floorPlanImg.src = floorPlanUrl;
+            floorPlanImg.style.display = 'block';
+            floorPlanImg.style.position = 'absolute';
+            floorPlanImg.style.top = '50%';
+            floorPlanImg.style.left = '50%';
+            floorPlanImg.style.transform = 'translate(-50%, -50%)';
+            floorPlanImg.style.maxWidth = '100%';
+            floorPlanImg.style.maxHeight = '100%';
+            floorPlanImg.style.objectFit = 'contain';
+            
+            hotelMapContainer.style.position = 'relative';
+            hotelMapContainer.style.overflow = 'hidden';
+            hotelMapContainer.style.display = 'flex';
+            hotelMapContainer.style.alignItems = 'center';
+            hotelMapContainer.style.justifyContent = 'center';
+        };
+        
+        testImage.onerror = function() {
+            console.error('Guest: Failed to load image for floor', floorNum);
+            floorPlanImg.style.display = 'none';
+            floorPlanImg.src = '';
+            
+            // Show fallback message
+            if (floorPlanUrl.startsWith('http')) {
+                console.log('Image URL might be invalid or blocked:', floorPlanUrl);
+            }
+        };
+        
+        // Add cache busting for URL images
+        if (floorPlanUrl.startsWith('http')) {
+            const separator = floorPlanUrl.includes('?') ? '&' : '?';
+            testImage.src = floorPlanUrl + separator + 't=' + Date.now();
+        } else {
+            testImage.src = floorPlanUrl;
+        }
+        
+    } else {
+        console.log('Guest: No image for floor', floorNum);
         floorPlanImg.src = '';
         floorPlanImg.style.display = 'none';
-
-        if (floorPlanUrl && floorPlanUrl.length > 100) {
-            const testImage = new Image();
-            testImage.onload = function() {
-                floorPlanImg.src = floorPlanUrl;
-                floorPlanImg.style.display = 'block';
-                floorPlanImg.style.position = 'absolute';
-                floorPlanImg.style.top = '50%';
-                floorPlanImg.style.left = '50%';
-                floorPlanImg.style.transform = 'translate(-50%, -50%)';
-                floorPlanImg.style.maxWidth = '100%';
-                floorPlanImg.style.maxHeight = '100%';
-                floorPlanImg.style.objectFit = 'contain';
-                
-                hotelMapContainer.style.position = 'relative';
-                hotelMapContainer.style.overflow = 'hidden';
-                hotelMapContainer.style.display = 'flex';
-                hotelMapContainer.style.alignItems = 'center';
-                hotelMapContainer.style.justifyContent = 'center';
-                
-                // ✅ Apply marker sizes after image loads
-                applyMarkerSizes();
-            };
-            testImage.onerror = function() {
-                console.error('Guest: Failed to load image for floor', floorNum);
-                floorPlanImg.style.display = 'none';
-                floorPlanImg.src = '';
-            };
-            testImage.src = floorPlanUrl;
-        } else {
-            floorPlanImg.src = '';
-            floorPlanImg.style.display = 'none';
-        }
-
-        renderMap();
-        highlightCurrentPathOnFloor();
     }
 
+    renderMap();
+    // Re-highlight path when switching floors
+    highlightCurrentPathOnFloor();
+}
     // Initialize UI
     if (floorNumbers.length > 0) {
         populateFloorSelect();
@@ -677,3 +696,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ✅ Listen for window resize to update marker sizes
     window.addEventListener('resize', applyMarkerSizes);
 });
+
