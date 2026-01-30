@@ -428,9 +428,9 @@ floorPlanUpload.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (file && file.type.startsWith('image/')) {
         // File size validation
-        const maxSize = 5 * 1024 * 1024; // 5MB
+        const maxSize = 50 * 1024 * 1024; // 5MB
         if (file.size > maxSize) {
-            alert(`File too large! Please select an image smaller than 5MB.\nCurrent size: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+            alert(`File too large! Please select an image smaller than 50MB.\nCurrent size: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
             e.target.value = '';
             return;
         }
