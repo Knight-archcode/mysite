@@ -457,7 +457,7 @@ floorPlanUpload.addEventListener('change', async (e) => {
                 } else {
                     alert(`❌ Upload failed: ${result.error}`);
                 }
-            } else {
+          /*  } else {
                 // Fallback to base64 (but with compression)
                 alert('⚠️ Using local storage (image will be compressed)');
                 
@@ -468,7 +468,7 @@ floorPlanUpload.addEventListener('change', async (e) => {
                     // Compress image
                     const compressed = await compressImage(reader.result, 0.6);
                     floorData.floorPlanUrl = compressed;
-                    floorData.imageType = 'base64';
+                    floorData.imageType = 'base64'; */
                     
                     saveData();
                     loadFloor(currentFloor);
