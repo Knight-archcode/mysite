@@ -245,13 +245,13 @@ hotel-map {
     }
 }
 
-/* ✅ Ensure markers are visible on all devices */
+/* ✅ Ensure markers are visible on all devices 9999*/
 @media (hover: none) and (pointer: coarse) {
     /* Touch devices */
     .marker {
-        width: 52px !important;
-        height: 52px !important;
-        font-size: 26px !important;
+        width: 32px !important;
+        height: 32px !important;
+        font-size: 16px !important;
     }
 }
 
@@ -266,4 +266,5 @@ hotel-map {
         background-color: white !important;
     }
 }
+
 
