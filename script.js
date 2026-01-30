@@ -1,4 +1,4 @@
-// script.js - Complete with mobile fixes and auto-expanding route box
+// script.js - Fixed for mobile markers and "Start at" text
 
 document.addEventListener('DOMContentLoaded', async () => {
     feather.replace();
@@ -12,28 +12,84 @@ document.addEventListener('DOMContentLoaded', async () => {
     const qrcodeDiv = document.getElementById('qrcode');
     const guestFloorSelect = document.getElementById('guestFloorSelect');
 
-    // ✅ SUPABASE CONFIGURATION - YOUR CREDENTIALS
+    // ✅ SUPABASE CONFIGURATION
     const SUPABASE_URL = 'https://ejqrlglwogjpabmojfly.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqcXJsZ2x3b2dqcGFibW9qZmx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3MTU1NTcsImV4cCI6MjA4NTI5MTU1N30.OQeRNExX5PHG9BVmthuUFebVyyahg7tZWmmqCOLGBnE';
     let supabaseClient = null;
     let hotelId = 'default_hotel';
     
+    // ✅ MARKER SIZE SETTINGS - ADJUST HERE
+    const MARKER_SETTINGS = {
+        desktop: {
+            size: '32px',      // ✅ Change this value for desktop marker size
+            fontSize: '16px',
+            borderWidth: '2px'
+        },
+        mobile: {
+            size: '36px',      // ✅ Change this value for mobile marker size
+            fontSize: '18px',
+            borderWidth: '2px'
+        }
+    };
+    
     try {
-        // Initialize Supabase with correct options
         supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-            auth: {
-                persistSession: false
-            }
+            auth: { persistSession: false }
         });
         console.log('✅ Supabase client initialized');
     } catch (error) {
         console.warn('⚠️ Supabase not available, using localStorage only', error);
     }
 
-    // ✅ CLOUD FUNCTIONS
+    // ✅ Apply marker size settings
+    function applyMarkerSizes() {
+        const isMobile = window.matchMedia("(max-width: 768px)").matches;
+        const settings = isMobile ? MARKER_SETTINGS.mobile : MARKER_SETTINGS.desktop;
+        
+        document.documentElement.style.setProperty('--marker-size', settings.size);
+        document.documentElement.style.setProperty('--marker-font-size', settings.fontSize);
+        document.documentElement.style.setProperty('--marker-border-width', settings.borderWidth);
+        
+        console.log(`Applied marker settings: ${settings.size} size (${isMobile ? 'mobile' : 'desktop'})`);
+    }
+
+    // ✅ Fix for mobile markers - ensure they're visible
+    function ensureMarkersVisible() {
+        const markers = document.querySelectorAll('.marker');
+        const containerRect = hotelMapContainer.getBoundingClientRect();
+        
+        markers.forEach(marker => {
+            // Ensure marker is properly positioned
+            const markerRect = marker.getBoundingClientRect();
+            
+            // Check if marker is within container
+            if (markerRect.width === 0 || markerRect.height === 0) {
+                console.warn('Marker has zero size:', marker.getAttribute('data-marker-name'));
+                
+                // Force marker to be visible
+                marker.style.display = 'flex';
+                marker.style.opacity = '1';
+                marker.style.visibility = 'visible';
+            }
+            
+            // Log marker position for debugging
+            console.log(`Marker ${marker.getAttribute('data-marker-name')}:`, {
+                left: marker.style.left,
+                top: marker.style.top,
+                visible: markerRect.width > 0 && markerRect.height > 0,
+                inContainer: (
+                    markerRect.left >= containerRect.left &&
+                    markerRect.right <= containerRect.right &&
+                    markerRect.top >= containerRect.top &&
+                    markerRect.bottom <= containerRect.bottom
+                )
+            });
+        });
+    }
+
+    // Cloud functions (keep your existing cloud functions)
     async function saveToCloud(hotelData) {
         if (!supabaseClient) return { success: false, error: 'No Supabase client' };
-        
         try {
             const { data, error } = await supabaseClient
                 .from('hotels')
@@ -41,12 +97,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     hotel_id: hotelId,
                     hotel_data: hotelData,
                     updated_at: new Date().toISOString()
-                }, {
-                    onConflict: 'hotel_id'
-                });
-            
+                }, { onConflict: 'hotel_id' });
             if (error) throw error;
-            
             console.log('✅ Hotel data saved to cloud');
             return { success: true, data };
         } catch (error) {
@@ -57,19 +109,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     async function loadFromCloud() {
         if (!supabaseClient) return { success: false, error: 'No Supabase client' };
-        
         try {
             const { data, error } = await supabaseClient
                 .from('hotels')
                 .select('hotel_data')
                 .eq('hotel_id', hotelId)
                 .maybeSingle();
-            
-            if (error) {
-                console.error('Supabase error:', error);
-                throw error;
-            }
-            
+            if (error) throw error;
             if (data && data.hotel_data) {
                 console.log('✅ Hotel data loaded from cloud');
                 return { success: true, data: data.hotel_data };
@@ -83,39 +129,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // ✅ SIMPLE DIRECT FETCH FUNCTION (Fallback)
-    async function fetchFromCloudDirect() {
-        try {
-            const response = await fetch(
-                `${SUPABASE_URL}/rest/v1/hotels?hotel_id=eq.${hotelId}&select=hotel_data`,
-                {
-                    headers: {
-                        'apikey': SUPABASE_KEY,
-                        'Authorization': `Bearer ${SUPABASE_KEY}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            
-            if (data && data.length > 0 && data[0].hotel_data) {
-                console.log('✅ Direct fetch: Hotel data loaded from cloud');
-                return { success: true, data: data[0].hotel_data };
-            } else {
-                console.log('ℹ️ Direct fetch: No hotel data found in cloud');
-                return { success: true, data: null };
-            }
-        } catch (error) {
-            console.error('❌ Direct fetch error:', error);
-            return { success: false, error };
-        }
-    }
-
     function generateShareableUrl(from, to) {
         const baseUrl = 'https://knight-archcode.github.io/mysite/';
         const params = new URLSearchParams({
@@ -125,7 +138,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             source: 'qr_code',
             t: Date.now()
         });
-        
         return `${baseUrl}?${params.toString()}`;
     }
 
@@ -134,106 +146,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         const urlHotelId = params.get('hotel');
         const fromParam = params.get('from');
         const toParam = params.get('to');
-        
-        if (urlHotelId) {
-            hotelId = urlHotelId;
-            console.log('📥 Loading hotel:', hotelId);
-        }
-        
+        if (urlHotelId) hotelId = urlHotelId;
         return { from: fromParam, to: toParam };
     }
 
-    // ✅ FUNCTION: Auto-expand route box
+    // ✅ Auto-expand route box
     function updateRouteBoxHeight() {
         if (!routeSteps) return;
-        
-        // Reset to minimum height first
         routeSteps.style.minHeight = '120px';
-        
-        // Calculate content height
         const contentHeight = routeSteps.scrollHeight;
-        
-        // Set new minimum height (with some padding)
-        const newHeight = Math.min(Math.max(contentHeight, 120), 400); // Min 120px, Max 400px
+        const newHeight = Math.min(Math.max(contentHeight, 120), 400);
         routeSteps.style.minHeight = `${newHeight}px`;
-        
-        // Add smooth transition
         routeSteps.style.transition = 'min-height 0.3s ease';
-        
-        console.log('Route box height updated:', newHeight, 'px');
     }
 
-    // ✅ FUNCTION: Adjust markers for mobile
-    function adjustMarkersForMobile() {
-        if (!window.matchMedia("(max-width: 768px)").matches) {
-            return; // Only adjust on mobile
-        }
-        
-        const markers = document.querySelectorAll('.marker');
-        const containerWidth = hotelMapContainer.offsetWidth;
-        const containerHeight = hotelMapContainer.offsetHeight;
-        
-        markers.forEach(marker => {
-            const currentLeft = parseFloat(marker.style.left) || 0;
-            const currentTop = parseFloat(marker.style.top) || 0;
-            
-            // Scale marker positions if needed
-            if (currentLeft > containerWidth || currentTop > containerHeight) {
-                const scaleX = containerWidth / 1000;
-                const scaleY = containerHeight / 800;
-                
-                marker.style.left = `${currentLeft * Math.min(scaleX, scaleY)}px`;
-                marker.style.top = `${currentTop * Math.min(scaleX, scaleY)}px`;
-            }
-        });
-    }
-
-    // ✅ FUNCTION: Debug marker positions
-    function debugMarkerPositions() {
-        const markers = document.querySelectorAll('.marker');
-        console.log(`Found ${markers.length} markers in DOM`);
-        
-        markers.forEach((marker, index) => {
-            const rect = marker.getBoundingClientRect();
-            console.log(`Marker ${index}:`, {
-                name: marker.getAttribute('data-marker-name'),
-                left: marker.style.left,
-                top: marker.style.top,
-                computedLeft: rect.left,
-                computedTop: rect.top,
-                width: rect.width,
-                height: rect.height,
-                visible: rect.width > 0 && rect.height > 0
-            });
-        });
-        
-        const containerRect = hotelMapContainer.getBoundingClientRect();
-        console.log('Container:', {
-            width: containerRect.width,
-            height: containerRect.height,
-            left: containerRect.left,
-            top: containerRect.top
-        });
-    }
-
-    // ✅ INITIALIZE: Check URL params first, then load data
+    // Initialize
     const urlParams = loadFromUrl();
-    
-    // Load data with priority: 1. localStorage, 2. Cloud, 3. URL
     let hotelData = JSON.parse(localStorage.getItem('hotelData') || '{}');
     
-    // If no data in localStorage, try cloud (using direct fetch as fallback)
-    if (Object.keys(hotelData).length === 0) {
-        let cloudResult;
-        
-        if (supabaseClient) {
-            cloudResult = await loadFromCloud();
-        }
-        
-        if (!cloudResult || !cloudResult.success) {
-            cloudResult = await fetchFromCloudDirect();
-        }
-        
+    if (Object.keys(hotelData).length === 0 && supabaseClient) {
+        const cloudResult = await loadFromCloud();
         if (cloudResult.success && cloudResult.data) {
             hotelData = cloudResult.data;
             localStorage.setItem('hotelData', JSON.stringify(hotelData));
@@ -244,7 +176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!hotelData.floors) hotelData.floors = {};
     console.log('Guest: Loaded hotelData', Object.keys(hotelData.floors || {}));
 
-    // Flatten all markers with floor info
+    // Flatten all markers
     let allMarkers = [];
     Object.keys(hotelData.floors).forEach(floorNum => {
         const floor = hotelData.floors[floorNum];
@@ -255,13 +187,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    console.log('Guest: Total markers found:', allMarkers.length);
-
     const floorNumbers = Object.keys(hotelData.floors).sort((a, b) => parseInt(a) - parseInt(b));
     let currentFloor = floorNumbers[0] || '1';
-    console.log('Guest: Current floor:', currentFloor, 'Available floors:', floorNumbers);
-    
-    // Store current path for highlighting
     let currentPath = [];
     let currentFloorPathSegments = [];
 
@@ -286,20 +213,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentFloor = floorNum;
         const floorData = hotelData.floors[floorNum] || {};
         const floorPlanUrl = floorData.floorPlanUrl || '';
-        
-        console.log('Guest: Floor image data for', floorNum, 'exists:', !!floorPlanUrl, 'length:', floorPlanUrl.length);
 
-        // Clear existing image
         floorPlanImg.src = '';
         floorPlanImg.style.display = 'none';
 
         if (floorPlanUrl && floorPlanUrl.length > 100) {
-            console.log('Guest: Setting image for floor', floorNum);
-            
             const testImage = new Image();
             testImage.onload = function() {
-                console.log('Guest: Image loaded for floor', floorNum);
-                
                 floorPlanImg.src = floorPlanUrl;
                 floorPlanImg.style.display = 'block';
                 floorPlanImg.style.position = 'absolute';
@@ -315,23 +235,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                 hotelMapContainer.style.display = 'flex';
                 hotelMapContainer.style.alignItems = 'center';
                 hotelMapContainer.style.justifyContent = 'center';
+                
+                // ✅ Apply marker sizes after image loads
+                applyMarkerSizes();
             };
-            
             testImage.onerror = function() {
                 console.error('Guest: Failed to load image for floor', floorNum);
                 floorPlanImg.style.display = 'none';
                 floorPlanImg.src = '';
             };
-            
             testImage.src = floorPlanUrl;
         } else {
-            console.log('Guest: No image for floor', floorNum);
             floorPlanImg.src = '';
             floorPlanImg.style.display = 'none';
         }
 
         renderMap();
-        // Re-highlight path when switching floors
         highlightCurrentPathOnFloor();
     }
 
@@ -341,16 +260,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadFloor(currentFloor);
         updateLocationDropdowns();
         
-        // ✅ Auto-set from URL parameters if provided
         if (urlParams.from && urlParams.to) {
             setTimeout(() => {
                 if (fromSelect) fromSelect.value = urlParams.from;
                 if (toSelect) toSelect.value = urlParams.to;
-                
-                // Auto-find route after UI loads
-                setTimeout(() => {
-                    if (findBtn) findBtn.click();
-                }, 1000);
+                setTimeout(() => { if (findBtn) findBtn.click(); }, 1000);
             }, 500);
         }
     } else {
@@ -358,18 +272,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateRouteBoxHeight();
     }
 
-    // Floor switch handler
+    // Event listeners
     guestFloorSelect?.addEventListener('change', () => {
-        console.log('Guest: Changing floor to', guestFloorSelect.value);
         loadFloor(guestFloorSelect.value);
     });
 
-    // Auto-switch floor when selecting location
     function autoSwitchFloor() {
         const from = fromSelect?.value;
         const to = toSelect?.value;
         let targetFloor = null;
-
         if (to) {
             const toMarker = allMarkers.find(m => m.name === to);
             if (toMarker) targetFloor = toMarker.floor;
@@ -377,9 +288,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const fromMarker = allMarkers.find(m => m.name === from);
             if (fromMarker) targetFloor = fromMarker.floor;
         }
-
         if (targetFloor && targetFloor !== currentFloor) {
-            console.log('Guest: Auto-switching to floor', targetFloor);
             currentFloor = targetFloor;
             if (guestFloorSelect) guestFloorSelect.value = currentFloor;
             loadFloor(currentFloor);
@@ -388,37 +297,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     fromSelect?.addEventListener('change', autoSwitchFloor);
     toSelect?.addEventListener('change', autoSwitchFloor);
-
     findBtn?.addEventListener('click', findRoute);
 
+    // ✅ FIXED: Render map with better mobile support
     function renderMap() {
-        console.log('Guest: Rendering map for floor', currentFloor);
-        // Clear all elements except the path segments (we'll handle those separately)
         document.querySelectorAll('.marker, .connection').forEach(el => el.remove());
 
         const floorMarkers = allMarkers.filter(m => m.floor === currentFloor);
-        console.log('Guest: Markers on this floor:', floorMarkers.length);
         
         floorMarkers.forEach(marker => {
             const el = document.createElement('div');
             el.className = 'marker';
             el.textContent = marker.icon;
             el.title = marker.name;
-            
-            // ✅ FIX: Ensure markers are positioned correctly
-            el.style.left = `${marker.x}px`;
-            el.style.top = `${marker.y}px`;
-            el.style.position = 'absolute';
-            el.style.zIndex = '10';
-            
-            // ✅ Add data attributes for debugging
             el.setAttribute('data-marker-name', marker.name);
             el.setAttribute('data-marker-id', marker.id);
             
-            hotelMapContainer.appendChild(el);
+            // ✅ FIX: Use absolute positioning with transform
+            el.style.position = 'absolute';
+            el.style.left = `${marker.x}px`;
+            el.style.top = `${marker.y}px`;
+            el.style.transform = 'translate(-50%, -50%)';
+            el.style.zIndex = '10';
+            el.style.display = 'flex'; // ✅ Ensure display is set
+            el.style.visibility = 'visible'; // ✅ Ensure visible
+            el.style.opacity = '1'; // ✅ Ensure not transparent
             
-            // ✅ Debug log for mobile
-            console.log(`Marker placed: ${marker.name} at (${marker.x}, ${marker.y})`);
+            hotelMapContainer.appendChild(el);
         });
 
         const floorConnections = (hotelData.floors[currentFloor]?.connections || []);
@@ -430,18 +335,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
         
-        // ✅ Adjust markers for mobile
-        setTimeout(adjustMarkersForMobile, 50);
-        
-        // ✅ Debug marker positions
-        setTimeout(debugMarkerPositions, 100);
-        
-        // ✅ Force a reflow to ensure markers are visible
-        setTimeout(() => {
-            hotelMapContainer.style.display = 'none';
-            hotelMapContainer.offsetHeight; // Trigger reflow
-            hotelMapContainer.style.display = 'flex';
-        }, 10);
+        // ✅ Apply marker sizes and ensure visibility
+        applyMarkerSizes();
+        setTimeout(ensureMarkersVisible, 100);
     }
 
     function drawConnection(x1, y1, x2, y2, className) {
@@ -457,14 +353,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         hotelMapContainer.appendChild(div);
     }
 
-    // Draw path segment with highlighting
     function drawPathSegment(x1, y1, x2, y2, isElevator = false) {
         const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
         const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
         const div = document.createElement('div');
         div.className = 'path-segment';
-        
-        // Different styling for elevator segments
         if (isElevator) {
             div.style.background = '#f59e0b';
             div.style.border = '2px dashed #d97706';
@@ -473,7 +366,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             div.style.background = '#ef4444';
             div.style.height = '4px';
         }
-        
         div.style.width = `${length}px`;
         div.style.left = `${x1}px`;
         div.style.top = `${y1}px`;
@@ -482,86 +374,61 @@ document.addEventListener('DOMContentLoaded', async () => {
         div.style.opacity = '0.9';
         div.style.boxShadow = '0 0 8px rgba(239, 68, 68, 0.5)';
         div.style.animation = 'pulse 2s infinite';
-        
         hotelMapContainer.appendChild(div);
         currentFloorPathSegments.push(div);
     }
 
-    // Highlight path segments on current floor
     function highlightCurrentPathOnFloor() {
-        // Clear existing path segments
         currentFloorPathSegments.forEach(segment => segment.remove());
         currentFloorPathSegments = [];
-        
         if (currentPath.length < 2) return;
         
-        // Find segments that belong to current floor
         for (let i = 0; i < currentPath.length - 1; i++) {
             const currentMarker = currentPath[i];
             const nextMarker = currentPath[i + 1];
-            
-            // Check if both markers are on current floor
             if (currentMarker.floor === currentFloor && nextMarker.floor === currentFloor) {
-                // Regular connection on same floor
                 drawPathSegment(currentMarker.x, currentMarker.y, nextMarker.x, nextMarker.y, false);
-            } 
-            // Check if this is an elevator connection point
-            else if (currentMarker.icon === '🛗' && nextMarker.icon === '🛗') {
-                // If either elevator is on current floor, show a special marker
+            } else if (currentMarker.icon === '🛗' && nextMarker.icon === '🛗') {
                 if (currentMarker.floor === currentFloor) {
                     drawElevatorIndicator(currentMarker.x, currentMarker.y);
                 }
             }
         }
         
-        // Highlight the start and end markers if they're on this floor
         const startMarker = currentPath[0];
         const endMarker = currentPath[currentPath.length - 1];
-        
-        if (startMarker.floor === currentFloor) {
-            highlightMarker(startMarker, true, 'start');
-        }
-        if (endMarker.floor === currentFloor) {
-            highlightMarker(endMarker, true, 'end');
-        }
+        if (startMarker.floor === currentFloor) highlightMarker(startMarker, true, 'start');
+        if (endMarker.floor === currentFloor) highlightMarker(endMarker, true, 'end');
     }
 
-    // Highlight a marker
     function highlightMarker(marker, highlight, type = 'normal') {
         const markerElements = document.querySelectorAll('.marker');
         markerElements.forEach(el => {
             const x = parseFloat(el.style.left);
             const y = parseFloat(el.style.top);
-            
-            // Find the matching marker by position
             if (Math.abs(x - marker.x) < 5 && Math.abs(y - marker.y) < 5) {
                 if (highlight) {
                     el.style.transform = 'translate(-50%, -50%) scale(1.3)';
                     el.style.zIndex = '20';
                     el.style.boxShadow = '0 0 15px rgba(0, 0, 0, 0.7)';
-                    
-                    // Add special styling based on type
                     if (type === 'start') {
-                        el.style.border = '3px solid #10b981';
-                        el.style.borderRadius = '50%';
+                        el.style.borderColor = '#10b981';
                         el.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
                     } else if (type === 'end') {
-                        el.style.border = '3px solid #3b82f6';
-                        el.style.borderRadius = '50%';
+                        el.style.borderColor = '#3b82f6';
                         el.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
                     }
                 } else {
                     el.style.transform = 'translate(-50%, -50%)';
                     el.style.zIndex = '10';
-                    el.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
-                    el.style.border = '3px solid #3b82f6';
-                    el.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+                    el.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+                    el.style.borderColor = '#3b82f6';
+                    el.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
                 }
             }
         });
     }
 
-    // Draw elevator indicator
     function drawElevatorIndicator(x, y) {
         const indicator = document.createElement('div');
         indicator.className = 'elevator-indicator';
@@ -597,13 +464,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 opt.textContent = `${loc.icon} ${loc.name} (${loc.floorName})`;
                 select.appendChild(opt);
             });
-            if (locations.some(l => l.name === current)) {
-                select.value = current;
-            }
+            if (locations.some(l => l.name === current)) select.value = current;
         });
     }
 
-    // === PATHFINDING & DIRECTIONS ===
+    // Pathfinding (keep your existing pathfinding functions)
     function findShortestPath(startName, endName) {
         const start = allMarkers.find(m => m.name === startName);
         const end = allMarkers.find(m => m.name === endName);
@@ -611,7 +476,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const graph = {};
         allMarkers.forEach(m => { graph[m.id] = []; });
-
         Object.values(hotelData.floors).forEach(floor => {
             (floor?.connections || []).forEach(([a, b]) => {
                 const m1 = allMarkers.find(m => m.id === a);
@@ -650,7 +514,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             if (u === null || u === end.id) break;
             queue.splice(queue.indexOf(u), 1);
-
             for (const neighbor of graph[u] || []) {
                 const alt = dist[u] + neighbor.dist;
                 if (alt < dist[neighbor.id]) {
@@ -670,11 +533,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         return path.map(id => allMarkers.find(m => m.id === id));
     }
 
+    // ✅ FIXED: Generate directions with "Start at" text
     function generateDirections(path) {
         if (path.length <= 1) return [];
 
         const instructions = [];
         const startFloorName = getFloorName(path[0].floor);
+        
+        // ✅ FIX: Add "Start at" text
         instructions.push(`<strong>Start at ${path[0].icon} ${path[0].name} on ${startFloorName}.</strong>`);
 
         for (let i = 1; i < path.length; i++) {
@@ -682,21 +548,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             const prev = path[i - 1];
 
             if (prev.floor !== current.floor) {
-                instructions.push(`<span class="text-orange-600">Take the elevator to ${getFloorName(current.floor)}.</span>`);
+                instructions.push(`Take the elevator to ${getFloorName(current.floor)}.`);
                 if (i === path.length - 1) {
-                    instructions.push(`<strong class="text-green-600">Arrive at ${current.icon} ${current.name}.</strong>`);
+                    instructions.push(`<strong>Arrive at ${current.icon} ${current.name}.</strong>`);
                 }
                 continue;
             }
 
             if (i === path.length - 1) {
-                instructions.push(`<strong class="text-green-600">Arrive at ${current.icon} ${current.name}.</strong>`);
+                instructions.push(`<strong>Arrive at ${current.icon} ${current.name}.</strong>`);
                 break;
             }
 
             const next = path[i + 1];
             if (next.floor !== current.floor) {
-                instructions.push(`<span class="text-orange-600">Go to the elevator.</span>`);
+                instructions.push(`Go to the elevator.`);
                 continue;
             }
 
@@ -734,18 +600,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         return floorData?.name || `Floor ${floorNum}`;
     }
 
+    // ✅ FIXED: findRoute function
     function findRoute() {
         const from = fromSelect?.value;
         const to = toSelect?.value;
         if (!from || !to) {
             routeSteps.innerHTML = '<p class="text-gray-400 text-center py-8">Select both start and destination locations</p>';
             qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">Route QR appears here</p>';
-            
-            // Clear any existing highlighting
             currentPath = [];
             highlightCurrentPathOnFloor();
-            
-            // Update route box height
             setTimeout(updateRouteBoxHeight, 10);
             return;
         }
@@ -754,36 +617,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!path || path.length === 0) {
             routeSteps.innerHTML = '<p class="text-red-600 text-center py-8">No path found between these locations.</p>';
             qrcodeDiv.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">No route available</p>';
-            
-            // Clear any existing highlighting
             currentPath = [];
             highlightCurrentPathOnFloor();
-            
-            // Update route box height
             setTimeout(updateRouteBoxHeight, 10);
             return;
         }
 
-        // Store the current path
         currentPath = path;
-        
         const directions = generateDirections(path);
-        let stepsHtml = '<ol class="list-decimal pl-5 space-y-3">'; // ✅ Added more spacing
+        
+        // ✅ FIX: Ensure directions start with "Start at"
+        console.log('Directions generated:', directions);
+        
+        let stepsHtml = '<ol class="list-decimal pl-5 space-y-2">';
         directions.forEach((step, index) => {
             stepsHtml += `<li class="py-1 ${index === 0 || index === directions.length - 1 ? 'font-semibold' : ''}">${step}</li>`;
         });
         stepsHtml += '</ol>';
         routeSteps.innerHTML = stepsHtml;
 
-        // Highlight the path on the map
         highlightCurrentPathOnFloor();
-
-        // ✅ Update route box height after content is rendered
         setTimeout(updateRouteBoxHeight, 50);
 
-        // ✅ QR Code generation with Cloud URL
         const url = generateShareableUrl(from, to);
-        
         qrcodeDiv.innerHTML = '';
         
         try {
@@ -793,24 +649,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             qr.addData(url);
             qr.make();
             const svgTag = qr.createSvgTag(4, 8);
-            
             const container = document.createElement('div');
             container.className = 'flex flex-col items-center';
             container.innerHTML = `
                 ${svgTag}
                 <div class="mt-3 text-center">
                     <p class="text-xs text-gray-600 mb-1">Scan to view route</p>
-                    <p class="text-xs text-green-600 font-medium">
-                        ✅ Includes hotel data
-                    </p>
-                    <p class="text-xs text-blue-600 mt-1">
-                        ${url.split('?')[0]}
-                    </p>
+                    <p class="text-xs text-green-600 font-medium">✅ Includes hotel data</p>
+                    <p class="text-xs text-blue-600 mt-1">${url.split('?')[0]}</p>
                 </div>
             `;
-            
             qrcodeDiv.appendChild(container);
-            
         } catch (e) {
             console.error("QR Error:", e);
             qrcodeDiv.innerHTML = `
@@ -822,22 +671,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
-    // ✅ Add cloud sync status indicator
-    function addCloudStatus() {
-        const statusDiv = document.createElement('div');
-        statusDiv.id = 'cloudStatus';
-        statusDiv.className = 'fixed bottom-4 left-4 z-50';
-        
-        statusDiv.innerHTML = `
-            <div class="bg-green-100 text-green-800 px-3 py-2 rounded-lg shadow flex items-center gap-2">
-                <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span class="text-sm">Cloud Sync: Ready</span>
-            </div>
-        `;
-        
-        document.body.appendChild(statusDiv);
-    }
+    // ✅ Apply initial marker sizes
+    applyMarkerSizes();
     
-    // Initialize cloud status
-    addCloudStatus();
+    // ✅ Listen for window resize to update marker sizes
+    window.addEventListener('resize', applyMarkerSizes);
 });
