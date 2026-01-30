@@ -423,83 +423,72 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // === ✅ FIXED: FILE UPLOAD WITH BETTER FEEDBACK ===
-    floorPlanUpload.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file && file.type.startsWith('image/')) {
-            if (file.size > 5 * 1024 * 1024) { // 5MB limit
-                alert('Image size too large! Please select an image under 5MB.');
-                e.target.value = '';
-                return;
+ // === FILE UPLOAD - USING SUPABASE STORAGE ===
+floorPlanUpload.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+        // File size validation
+        const maxSize = 5 * 1024 * 1024; // 5MB
+        if (file.size > maxSize) {
+            alert(`File too large! Please select an image smaller than 5MB.\nCurrent size: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+            e.target.value = '';
+            return;
+        }
+        
+        // Show loading indicator
+        const originalText = clearMapBtn.textContent;
+        clearMapBtn.textContent = 'Uploading...';
+        clearMapBtn.disabled = true;
+        
+        try {
+            // Use Supabase Storage for images
+            if (window.imageUploader) {
+                const result = await window.imageUploader.uploadImage(file, currentFloor);
+                
+                if (result.success) {
+                    // Store only the URL, not the full base64 data
+                    const floorData = getFloorData(currentFloor);
+                    floorData.floorPlanUrl = result.publicUrl;
+                    floorData.imageType = 'url'; // Mark as URL, not base64
+                    
+                    saveData();
+                    loadFloor(currentFloor);
+                    alert('✅ Image uploaded to cloud storage!');
+                } else {
+                    alert(`❌ Upload failed: ${result.error}`);
+                }
+            } else {
+                // Fallback to base64 (but with compression)
+                alert('⚠️ Using local storage (image will be compressed)');
+                
+                const reader = new FileReader();
+                reader.onload = async () => {
+                    const floorData = getFloorData(currentFloor);
+                    
+                    // Compress image
+                    const compressed = await compressImage(reader.result, 0.6);
+                    floorData.floorPlanUrl = compressed;
+                    floorData.imageType = 'base64';
+                    
+                    saveData();
+                    loadFloor(currentFloor);
+                };
+                reader.readAsDataURL(file);
             }
             
-            console.log('Uploading image for floor', currentFloor, 'File:', file.name, 'Size:', file.size);
-            
-            // Show loading indicator
-            const originalBtnText = floorPlanUpload.parentElement.querySelector('span')?.textContent || 'Upload Image';
-            floorPlanUpload.parentElement.innerHTML = `
-                <span class="text-green-600">⏳ Processing image...</span>
-                <input type="file" id="floorPlanUpload" accept="image/*" class="hidden" />
-            `;
-            
-            const reader = new FileReader();
-            
-            reader.onloadstart = () => {
-                console.log('Starting to read file...');
-            };
-            
-            reader.onprogress = (event) => {
-                if (event.lengthComputable) {
-                    const percent = Math.round((event.loaded / event.total) * 100);
-                    console.log(`Loading: ${percent}%`);
-                }
-            };
-            
-            reader.onload = () => {
-                console.log('FileReader: Image loaded successfully');
-                const floorData = getFloorData(currentFloor);
-                floorData.floorPlanUrl = reader.result;
-                console.log('Image saved for floor', currentFloor, 'size:', reader.result.length, 'type:', typeof reader.result);
-                
-                saveData();
-                
-                // Restore file input
-                floorPlanUpload.parentElement.innerHTML = `
-                    <span class="text-green-600">✅ Image uploaded! Loading...</span>
-                    <input type="file" id="floorPlanUpload" accept="image/*" 
-                        class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700" />
-                `;
-                
-                // Re-attach event listener
-                document.getElementById('floorPlanUpload').addEventListener('change', floorPlanUploadEventListener);
-                
-                // Reload floor with new image
-                setTimeout(() => {
-                    loadFloor(currentFloor);
-                    alert(`✅ Floor plan image uploaded successfully for ${floorData.name}!`);
-                }, 500);
-            };
-            
-            reader.onerror = (error) => {
-                console.error('FileReader error:', error);
-                alert('Error reading image file. Please try again.');
-                
-                // Restore file input
-                floorPlanUpload.parentElement.innerHTML = `
-                    <span class="text-red-600">❌ Upload failed</span>
-                    <input type="file" id="floorPlanUpload" accept="image/*" 
-                        class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700" />
-                `;
-                
-                // Re-attach event listener
-                document.getElementById('floorPlanUpload').addEventListener('change', floorPlanUploadEventListener);
-            };
-            
-            reader.readAsDataURL(file);
-        } else {
-            alert('Please select a valid image file (JPEG, PNG, GIF, WebP, etc.)');
+        } catch (error) {
+            console.error('Upload error:', error);
+            alert('Error uploading image');
+        } finally {
+            // Reset button
+            clearMapBtn.textContent = originalText;
+            clearMapBtn.disabled = false;
+            e.target.value = '';
         }
-    });
+    } else {
+        alert('Please select a valid image file (JPEG, PNG, etc.)');
+    }
+});
 
     // Store event listener for reattachment
     const floorPlanUploadEventListener = floorPlanUpload.addEventListener;
