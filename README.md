@@ -1,3 +1,5 @@
+ADMIN PAGE NOT WORKING
+
 - 🏨 Hotel Hopper Navigator
 
 A complete, self-contained web application for hotel navigation with guest navigation and admin management interfaces. This system allows hotel staff to create interactive floor plans and guests to navigate through the hotel with turn-by-turn directions.
